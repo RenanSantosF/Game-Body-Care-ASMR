@@ -52,8 +52,8 @@ func set_tool(id: String) -> void:
 			var cm := MeshGen.shader_mat("res://shaders/fabric.gdshader")
 			cm.set_shader_parameter("kind", 1)
 			parts["mat"] = cm
-			_sph(ball, Vector3(0.045, 0.032, 0.045), cm, Vector3(0, 0.028, 0))
-			_sph(ball, Vector3(0.034, 0.03, 0.036), cm, Vector3(0.024, 0.045, 0.01))
+			_sph(ball, Vector3(0.032, 0.022, 0.032), cm, Vector3(0, 0.02, 0))
+			_sph(ball, Vector3(0.024, 0.021, 0.025), cm, Vector3(0.017, 0.032, 0.007))
 			# pinça segurando o algodão
 			for side in [-1.0, 1.0]:
 				var arm := MeshGen.inst(root, MeshGen.cylinder(1.0, 1.0, 0.5), metal, Vector3(side * 0.012, 0.22, 0), Vector3(0.008, 0.34, 0.004))
@@ -100,8 +100,8 @@ func set_tool(id: String) -> void:
 			var head := Node3D.new()
 			root.add_child(head)
 			parts["head"] = head
-			MeshGen.inst(head, MeshGen.sphere(1.0), _plastic(Color("9b7bff")), Vector3(0, 0.02, 0), Vector3(0.1, 0.018, 0.03))
-			var blade := MeshGen.inst(head, BoxMesh.new(), metal, Vector3(0, 0.006, 0.0), Vector3(0.19, 0.004, 0.022))
+			MeshGen.inst(head, MeshGen.sphere(1.0), _plastic(Color("9b7bff")), Vector3(0, 0.02, 0), Vector3(0.16, 0.018, 0.03))
+			var blade := MeshGen.inst(head, BoxMesh.new(), metal, Vector3(0, 0.006, 0.0), Vector3(0.3, 0.004, 0.022))
 			blade.name = "blade"
 			_cyl(root, 0.014, 0.36, _plastic(Color("9b7bff")), Vector3(0, 0.21, 0.0))
 		"alicate":

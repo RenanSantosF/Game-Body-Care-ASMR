@@ -62,7 +62,7 @@ void fragment() {
 	float h0 = detail(p);
 	float hx = detail(p + vec2(e, 0.0));
 	float hz = detail(p + vec2(0.0, e));
-	vec3 n = normalize(wn - vec3((hx - h0) / e, 0.0, (hz - h0) / e) * 0.0006);
+	vec3 n = normalize(wn - vec3((hx - h0) / e, 0.0, (hz - h0) / e) * 0.00045);
 	c *= 0.96 + 0.06 * h0;
 
 	// respingos (sangue/pus) pintados na pele
@@ -74,7 +74,7 @@ void fragment() {
 	c = mix(c, pt.rgb * (0.85 + 0.3 * pt.a), smoothstep(0.02, 0.5, pt.a));
 
 	ALBEDO = c;
-	ROUGHNESS = mix(0.55, 0.12, smoothstep(0.05, 0.4, pt.a));
+	ROUGHNESS = mix(0.62, 0.12, smoothstep(0.05, 0.4, pt.a));
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 }
 

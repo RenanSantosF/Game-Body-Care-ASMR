@@ -7,7 +7,23 @@ const PARTS := ["mao", "pe"]
 static func is_extreme(level: int) -> bool:
 	return level % 5 == 0
 
+## usado pelos testes para forçar uma lista de problemas
+static var force: Array = []
+
 static func make(level: int) -> Dictionary:
+	var d := _make(level, true)
+	if not force.is_empty():
+		d["problems"] = force.duplicate()
+	return d
+
+## Lista "crua" da fase (sem olhar a anterior) — usada para evitar repetir problemas
+static func _raw_ids(level: int) -> Array:
+	if level < 1:
+		return []
+	return _make(level, false)["problems"]
+
+static func _make(level: int, avoid_repeat: bool) -> Dictionary:
+	var prev: Array = _raw_ids(level - 1) if avoid_repeat else []
 	var rng := RandomNumberGenerator.new()
 	rng.seed = level * 7919 + 4242
 	var extreme := is_extreme(level)
@@ -47,6 +63,11 @@ static func make(level: int) -> Dictionary:
 	while chosen.size() < count and guard < 300:
 		guard += 1
 		var id := _weighted(pool, rng, max_tier, extreme)
+		# variedade: evita o que já saiu na fase anterior e repetir na mesma fase
+		if prev.has(id) and rng.randf() < 0.8:
+			continue
+		if chosen.has(id) and pool.size() > chosen.size() + 2 and rng.randf() < 0.85:
+			continue
 		var d: Dictionary = Defs.PROBLEMS[id]
 		if d["where"] == "unha":
 			if nails >= 3:

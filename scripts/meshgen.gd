@@ -303,7 +303,7 @@ static var _pm := {}
 
 static func burst(parent: Node, pos: Vector3, color: Color, amount := 14, speed := 1.0, size := 0.02,
 		dir := Vector3.UP, spread := 45.0, gravity := -6.0, life := 0.8, glossy := true) -> void:
-	if parent == null or not parent.is_inside_tree():
+	if parent == null or not parent.is_inside_tree() or amount < 1:
 		return
 	var key := color.to_html() + str(size) + str(glossy)
 	if not _pm.has(key):

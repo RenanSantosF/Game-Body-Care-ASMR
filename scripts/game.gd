@@ -879,6 +879,7 @@ func _do_rub(p: Problem, pos: Vector2, px: float) -> void:
 
 func _drag(pos: Vector2) -> void:
 	var rel := pos.distance_to(last_pos)
+	var prev_pos := last_pos
 	last_pos = pos
 	if active == null and selected != "":
 		var p := _pick_problem(pos)
@@ -894,6 +895,9 @@ func _drag(pos: Vector2) -> void:
 			skin_cut.wound_stroke(hit[0], false)
 			pain = minf(100.0, pain + rel * 0.04)
 			Sfx.play_throttled("cut", 0.1, 0.3, -6)
+	# pano/algodão limpam o que sobrou mesmo depois do problema já "pronto"
+	if selected in ["pano", "algodao"] and (active == null or active.tool() != selected):
+		_clean_residue(pos)
 	var a := active
 	if a == null:
 		return
@@ -909,7 +913,25 @@ func _drag(pos: Vector2) -> void:
 		Defs.Mech.PULL:
 			frame_pull += rel
 		Defs.Mech.SWEEP:
-			a.sweep(pos, _sweep_r(), cam)
+			# interpola ao longo do arrasto para não pular pelos em movimentos rápidos
+			var steps := clampi(int(rel / 20.0), 1, 12)
+			for i in steps:
+				a.sweep(prev_pos.lerp(pos, float(i + 1) / steps), _sweep_r(), cam)
+
+func _clean_residue(pos: Vector2) -> void:
+	var hit := _ray_body(pos)
+	if hit.is_empty():
+		return
+	var wpos: Vector3 = hit[0]
+	var br: float = BRUSH.get(selected, 0.04)
+	var gained := 0.0
+	for p in problems:
+		if is_instance_valid(p) and p.center().distance_to(wpos) < p.size * 2.5 + br:
+			gained += p.clean_residue(wpos, br)
+	body.clean_stains(wpos, br)
+	if gained > 0.0004:
+		_rub_fx(problems[0])
+		tool_model.soil(Color(0.55, 0.42, 0.25), minf(0.05, gained * 2.0))
 
 func _release() -> void:
 	pressing = false
@@ -926,7 +948,7 @@ func _release() -> void:
 	_update_labels()
 
 func _sweep_r() -> float:
-	return 55.0
+	return 110.0 if selected == "lamina" else 55.0
 
 func _rub_fx(p: Problem) -> void:
 	if now - rub_t < 0.07:

@@ -12,7 +12,11 @@ func _ready() -> void:
 	var seen := {}
 	var last := int(OS.get_environment("LEVELS")) if OS.get_environment("LEVELS") != "" else 20
 	var first := int(OS.get_environment("START")) if OS.get_environment("START") != "" else 1
+	var forced := OS.get_environment("FORCE")
 	for lvl in range(first, last + 1):
+		if forced != "":
+			var ids := Array(forced.split(","))
+			LevelGen.force = ids.slice(0, 3) if lvl % 2 == 1 else ids.slice(3)
 		GameData.current_level = lvl
 		var game = load("res://scenes/game.tscn").instantiate()
 		add_child(game)

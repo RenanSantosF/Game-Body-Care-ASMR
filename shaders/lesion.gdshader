@@ -20,7 +20,8 @@ uniform float use_fx = 0.0;
 uniform float open_amt = 0.0;
 uniform float wet = 0.0;
 uniform float scar = 0.0;      // corte cicatrizando (casquinha)
-uniform float pore = 0.0;      // marca de poro (espinha) no meio da cicatriz
+uniform float pore = 0.0;
+uniform vec3 tint : source_color = vec3(1.0);      // marca de poro (espinha) no meio da cicatriz
 uniform float rot = 0.0;
 uniform float half_size = 0.1;
 uniform float sss_amount = 0.5;
@@ -41,6 +42,7 @@ const int FLUID = 11;
 const int OILY = 12;
 const int SCRAPE = 13;
 const int SCAR = 14;
+const int STUBBLE = 15;
 
 varying vec3 wn;
 
@@ -163,7 +165,7 @@ void fragment() {
 		float n = fbm(uv * 5.0 + seed);
 		float thick = smoothstep(0.1, 0.8, b);
 		if (kind == PUS) {
-			col = mix(mix(skin, vec3(1.0, 0.94, 0.72), 0.6), vec3(0.86, 0.72, 0.36), thick);
+			col = mix(mix(skin, vec3(1.0, 0.94, 0.72) * tint, 0.6), vec3(0.86, 0.72, 0.36) * tint, thick);
 			col = mix(col, vec3(0.72, 0.74, 0.4), smoothstep(0.6, 0.9, fbm(uv * 3.0 + 9.0)) * 0.3);
 			col *= 0.9 + n * 0.15;
 			a *= 0.6 + 0.35 * thick;
@@ -237,6 +239,15 @@ void fragment() {
 		a = (1.0 - smoothstep(0.3, 1.0, r)) * 0.22;
 		col = vec3(1.0, 0.95, 0.75);
 		gloss = 1.0;
+	} else if (kind == STUBBLE) {
+		// pontinhos dos pelos raspados
+		vec2 cell = floor(uv * 55.0);
+		vec2 fp = fract(uv * 55.0) - 0.5 - (vec2(h21(cell), h21(cell + 3.7)) - 0.5) * 0.6;
+		float dot_ = (1.0 - smoothstep(0.08, 0.16, length(fp))) * step(0.35, h21(cell + 9.1));
+		float area = 1.0 - smoothstep(0.55, 1.0, r + (fbm(uv * 2.0 + seed) - 0.5) * 0.3);
+		col = vec3(0.12, 0.08, 0.06);
+		a = dot_ * area * 0.85;
+		gloss = 0.1;
 	} else if (kind == SCAR) {
 		float e = (fbm(uv * 2.5 + seed) - 0.5) * 0.35;
 		a = (1.0 - smoothstep(0.15, 1.0, r + e)) * 0.6;
@@ -248,8 +259,12 @@ void fragment() {
 	} else if (kind == SCRAPE) {
 		a = (1.0 - smoothstep(0.3, 1.0, r)) * 0.7;
 		float scr = abs(sin(uv.y * 120.0 + fbm(uv * 4.0) * 5.0));
-		col = mix(skin, vec3(0.95, 0.45, 0.45), 0.55) * (0.85 + 0.15 * smoothstep(0.0, 0.25, scr));
-		gloss = 0.5;
+		a = (1.0 - smoothstep(0.35, 1.0, r + (fbm(uv * 3.0 + seed) - 0.5) * 0.35)) * 0.92;
+		col = mix(skin, vec3(0.78, 0.2, 0.18), 0.75) * (0.8 + 0.2 * smoothstep(0.0, 0.25, scr));
+		// pontinhos de sangue seco e carne viva brilhante
+		col = mix(col, vec3(0.38, 0.03, 0.04), smoothstep(0.62, 0.75, vnoise(uv * 40.0 + seed)) * 0.85);
+		col = mix(col, vec3(0.95, 0.5, 0.45), smoothstep(0.7, 0.85, fbm(uv * 9.0 - seed)) * 0.4);
+		gloss = 0.85;
 	}
 
 	a *= strength;

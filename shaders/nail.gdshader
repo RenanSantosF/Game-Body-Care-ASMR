@@ -9,6 +9,7 @@ uniform float dirt = 0.0;
 uniform float fungus = 0.0;
 uniform float cut_at = 9.0;
 uniform float keep_from = -1.0;
+uniform float hematoma = 0.0;
 uniform float use_mask = 0.0;
 uniform sampler2D mask : filter_linear, repeat_disable;
 uniform float seed = 0.0;
@@ -44,6 +45,8 @@ void fragment() {
 	float f = fungus * (1.0 - m);
 	float fn = fbm(vec2(u * 3.0, v * 5.0) + seed);
 	col = mix(col, mix(vec3(0.8, 0.62, 0.22), vec3(0.62, 0.48, 0.2), fn), f * smoothstep(0.2, 0.55, fn + 0.2));
+	float hem = hematoma * (1.0 - smoothstep(0.3, 0.75, length(vec2(u * 0.8, (v - 0.5) * 1.1)) + (fbm(vec2(u, v) * 3.0 + seed) - 0.5) * 0.3));
+	col = mix(col, mix(vec3(0.16, 0.02, 0.07), vec3(0.32, 0.06, 0.18), fbm(vec2(u, v) * 6.0)), hem);
 	float stripe = (1.0 - smoothstep(0.05, 0.25, abs(u + 0.35))) * 0.25;
 	ALBEDO = col + stripe * (1.0 - f);
 	ROUGHNESS = mix(0.12, 0.75, max(f, d * 0.6));

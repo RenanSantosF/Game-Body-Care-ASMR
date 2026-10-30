@@ -13,6 +13,7 @@ uniform float frozen = 0.0;
 uniform float seed = 0.0;
 uniform float alpha_mul = 1.0;
 uniform float deflate = 0.0;
+uniform vec3 pus_col : source_color = vec3(0.93, 0.78, 0.36);
 uniform sampler2D fx : filter_linear, repeat_disable;
 uniform sampler2D fxw : filter_linear, repeat_disable;
 uniform float use_fx = 0.0;
@@ -59,7 +60,7 @@ void fragment() {
 		// base inflamada -> pele fina esticada -> cabeça de pus amarela
 		// pele esticada: rosada na base, mais clara e fina no topo, pus amarelado aparecendo
 		col = mix(mix(skin, red, 0.42), mix(skin, vec3(1.0, 0.7, 0.62), 0.45), smoothstep(0.1, 0.75, h));
-		vec3 pus = mix(vec3(0.93, 0.78, 0.36), vec3(1.0, 0.94, 0.74), smoothstep(0.9, 1.0, h));
+		vec3 pus = mix(pus_col, mix(pus_col, vec3(1.0), 0.6), smoothstep(0.9, 1.0, h));
 		col = mix(col, pus, smoothstep(0.72, 0.96, h) * (1.0 - deflate * 0.6));
 		gloss = 0.7;
 	} else if (kind == 1) {
@@ -69,7 +70,7 @@ void fragment() {
 	} else if (kind == 2) {
 		col = mix(mix(skin, red, 0.45), mix(skin, vec3(0.8, 0.22, 0.25), 0.8), smoothstep(0.0, 0.6, h));
 		col = mix(col, vec3(0.92, 0.55, 0.3), smoothstep(0.72, 0.85, h));
-		col = mix(col, vec3(0.98, 0.88, 0.42), smoothstep(0.84, 0.95, h));
+		col = mix(col, pus_col * 1.05, smoothstep(0.84, 0.95, h));
 		col = mix(col, vec3(1.0, 0.97, 0.8), smoothstep(0.96, 1.0, h) * 0.6);
 		gloss = 0.7;
 	} else if (kind == 3) {

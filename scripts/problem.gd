@@ -23,6 +23,9 @@ const L_CUT := 9
 const L_TRACK := 10
 const L_FLUID := 11
 const L_OILY := 12
+const L_SCRAPE := 13
+const L_SCAR := 14
+const L_STUBBLE := 15
 # tipos do dome.gdshader
 const D_PUSTULE := 0
 const D_BLISTER := 1
@@ -72,6 +75,7 @@ var fx_hosts: Array = []          # nós com FxMap (corte/sangue pintado ao vivo
 var cut_host: Node3D              # onde a lâmina corta neste problema
 var guide_uv := PackedVector2Array()
 var wet := 0.0
+var pus_tint := Color.WHITE
 var blood_peak := 0.0
 
 static var _tube_mats := {}
@@ -88,7 +92,22 @@ func setup(p_id: String, p_body: Body, p_rng: RandomNumberGenerator, extra := {}
 	flat.global_basis = Basis()
 	if extra.has("nail"):
 		nail = extra["nail"]
+	# cada paciente é diferente: tamanho e cor do pus variam
+	if id in ["espinha", "cisto", "furunculo", "abscesso", "bolha", "verruga", "crosta", "sujeira", "favo", "larvas", "ralado", "calo"]:
+		size *= rng.randf_range(0.85, 1.35)
+	var tints := [Color(1, 1, 1), Color(0.88, 1.0, 0.6), Color(1.05, 1.0, 0.85), Color(1.0, 0.85, 0.7)]
+	pus_tint = tints[rng.randi() % tints.size()]
+	if id == "abscesso":
+		pus_tint = Color(0.75, 1.0, 0.45)
+	elif id == "cisto":
+		pus_tint = Color(1.08, 1.06, 0.95)
 	call("_build_" + id)
+	for key in n:
+		var nd = n[key]
+		if nd is MeshInstance3D and (nd as MeshInstance3D).material_override is ShaderMaterial:
+			var m := (nd as MeshInstance3D).material_override as ShaderMaterial
+			m.set_shader_parameter("tint", pus_tint)
+			m.set_shader_parameter("pus_col", Color(0.93, 0.78, 0.36) * pus_tint)
 
 func pname() -> String:
 	return def["name"]
@@ -253,6 +272,35 @@ func _set_guide_uv() -> void:
 	for q in cut_path:
 		guide_uv.append(host_uv(cut_host, q))
 
+## Limpa sujeira/pus/sangue que sobrou, mesmo depois da etapa terminar. Retorna o quanto limpou.
+func clean_residue(wpos: Vector3, brush_r: float) -> float:
+	var gained := 0.0
+	for key in ["dirt", "splat", "blood", "grime", "oily", "splat2"]:
+		if not n.has(key) or not is_instance_valid(n[key]):
+			continue
+		var mi: MeshInstance3D = n[key]
+		if not mi.has_meta("mask"):
+			continue
+		var c: Vector3 = mi.get_meta("c")
+		var half: float = mi.get_meta("half")
+		if Vector2(c.x - wpos.x, c.z - wpos.z).length() > half + brush_r:
+			continue
+		var mk: CleanMask = mi.get_meta("mask")
+		var before := mk.coverage()
+		var after := _paint(mi, wpos, brush_r, 0.35)
+		gained += maxf(0.0, after - before)
+		(mi.material_override as ShaderMaterial).set_shader_parameter("wet", 1.0)
+		wet = 1.0
+	for h in fx_hosts:
+		if is_instance_valid(h):
+			var fx: FxMap = h.get_meta("fx")
+			var uvp := host_uv(h, wpos)
+			if absf(uvp.x) < 1.2 and absf(uvp.y) < 1.2:
+				var b0 := fx.blood_at(uvp)
+				fx.wipe(uvp, brush_r / _host_half(h) * FxMap.SIZE * 0.5, 0.3)
+				gained += b0 * 0.02
+	return gained
+
 func set_cut(f: float) -> void:
 	if mech() != Defs.Mech.CUT:
 		return
@@ -369,6 +417,7 @@ func _lesion(kind: int, half: float, off := Vector2.ZERO, use_mask := false, lif
 	var mat := MeshGen.shader_mat(LESION)
 	mat.set_shader_parameter("kind", kind)
 	mat.set_shader_parameter("skin", skin)
+	mat.set_shader_parameter("tint", pus_tint)
 	mat.set_shader_parameter("seed", rng.randf() * 50.0)
 	mat.set_shader_parameter("rot", rot)
 	mat.set_shader_parameter("half_size", half)
@@ -574,7 +623,7 @@ func _pus_string(base: Vector3, length: float, thick: float, key := "pus") -> vo
 		pts.append(base + Vector3(sin(s * 40.0 + t * 2.0) * 0.004 + curl * curl * 6.0, s * 0.9 - curl * curl * 4.0, cos(s * 30.0) * 0.004))
 	var radii := _taper(cnt, thick, thick * 0.55)
 	if not n.has(key) or not is_instance_valid(n[key]):
-		n[key] = MeshGen.inst(self, MeshGen.tube(pts, radii, 10), tube_mat(T_PUS))
+		n[key] = MeshGen.inst(self, MeshGen.tube(pts, radii, 10), tube_mat(T_PUS, pus_tint))
 	else:
 		(n[key] as MeshInstance3D).mesh = MeshGen.tube(pts, radii, 10)
 	n[key].visible = length > 0.004
@@ -655,7 +704,7 @@ func _build_cravos() -> void:
 	items_left = items.size()
 
 func _build_pelos() -> void:
-	for i in rng.randi_range(70, 95):
+	for i in rng.randi_range(230, 300):
 		var a := rng.randf() * TAU
 		var d := sqrt(rng.randf())
 		var c := global_position + Vector3(cos(a) * d * size * 1.25, 0, sin(a) * d * size * 0.9)
@@ -949,6 +998,87 @@ func _build_favo() -> void:
 		items.append({"node": nd, "pos": sp[0], "alive": true})
 	items_left = items.size()
 
+func _build_cisto() -> void:
+	n["red"] = _lesion(L_INFLAM, size * 1.4)
+	_lmat(n["red"]).set_shader_parameter("strength", 0.5)
+	n["dome"] = _dome(D_BUMP, size * 0.8, size * 0.6)
+	_lset("dome", "hole", 1.0)
+	n["grip"] = n["dome"]
+
+func _build_abscesso() -> void:
+	_build_furunculo()
+	_lset("dome", "pus_col", Color(0.62, 0.66, 0.2))
+	# veias inchadas em volta
+	for i in 6:
+		var a := i * TAU / 6.0 + rng.randf() * 0.4
+		var v := _lesion(L_TRACK, size * 0.9, Vector2(cos(a), sin(a)) * size * 1.2, false, 0.003)
+		_lmat(v).set_shader_parameter("strength", 0.45)
+
+func _build_ralado() -> void:
+	n["red"] = _lesion(L_INFLAM, size * 1.5)
+	n["scrape"] = _lesion(L_SCRAPE, size * 1.15, Vector2.ZERO, false, 0.004)
+	n["grime"] = _lesion(L_PUS, size * 1.05, Vector2.ZERO, true, 0.008)
+	_lmat(n["grime"]).set_shader_parameter("tint", Color(0.56, 0.46, 0.34))
+	_lmat(n["grime"]).set_shader_parameter("strength", 0.55)
+	# pedrinhas e terra cravadas no ralado
+	for i in rng.randi_range(7, 11):
+		var a := rng.randf() * TAU
+		var d := sqrt(rng.randf()) * size * 0.75
+		var c := global_position + Vector3(cos(a) * d, 0, sin(a) * d)
+		var sp := body.surface(c.x, c.z)
+		if sp.is_empty():
+			continue
+		var nd := Node3D.new()
+		body.add_child(nd)
+		nd.global_position = sp[0]
+		var r := rng.randf_range(0.006, 0.013)
+		var col := Color(0.35, 0.32, 0.3).lerp(Color(0.5, 0.38, 0.25), rng.randf())
+		var st := MeshGen.inst(nd, MeshGen.sphere(1.0), MeshGen.std(col, 0.95), Vector3(0, r * 0.2, 0), Vector3(r, r * 0.7, r * rng.randf_range(0.7, 1.3)))
+		st.rotation = Vector3(rng.randf(), rng.randf() * TAU, rng.randf())
+		items.append({"node": nd, "pos": sp[0], "alive": true})
+	items_left = items.size()
+
+func _build_bicho_pe() -> void:
+	n["red"] = _lesion(L_INFLAM, size * 1.5)
+	n["dome"] = _dome(D_BUMP, size * 0.7, size * 0.4)
+	_lset("dome", "skin", skin.lerp(Color(1.0, 0.95, 0.8), 0.45))
+	_lset("dome", "hole", 1.0)
+	var sac := Node3D.new()
+	add_child(sac)
+	sac.position = Vector3(0, -0.006, 0)
+	MeshGen.inst(sac, MeshGen.sphere(1.0), MeshGen.std(Color(0.96, 0.92, 0.8), 0.3), Vector3.ZERO, Vector3(0.016, 0.014, 0.016))
+	MeshGen.inst(sac, MeshGen.sphere(1.0), MeshGen.std(Color(0.15, 0.08, 0.05), 0.4), Vector3(0, 0.013, 0), Vector3.ONE * 0.004)
+	n["sac"] = sac
+	n["grip"] = sac
+
+func _build_espinhos() -> void:
+	n["red"] = _lesion(L_INFLAM, size * 1.4)
+	_lmat(n["red"]).set_shader_parameter("strength", 0.6)
+	var tm := tube_mat(T_WOOD, Color(1.5, 1.4, 0.95))
+	for i in rng.randi_range(9, 15):
+		var a := rng.randf() * TAU
+		var d := sqrt(rng.randf()) * size * 0.85
+		var c := global_position + Vector3(cos(a) * d, 0, sin(a) * d)
+		var sp := body.surface(c.x, c.z)
+		if sp.is_empty():
+			continue
+		var nd := Node3D.new()
+		body.add_child(nd)
+		nd.global_position = sp[0]
+		nd.global_basis = MeshGen.basis_from_normal(sp[1]).rotated(sp[1], rng.randf() * TAU)
+		var L := rng.randf_range(0.03, 0.06)
+		var tilt := Vector3(rng.randf_range(0.3, 0.9), 1.0, rng.randf_range(-0.3, 0.3)).normalized()
+		var pts := PackedVector3Array([-tilt * 0.008, tilt * L * 0.5, tilt * L])
+		MeshGen.inst(nd, MeshGen.tube(pts, PackedFloat32Array([0.0022, 0.0016, 0.0004]), 5), tm)
+		MeshGen.inst(nd, MeshGen.sphere(1.0), MeshGen.std(Color(0.7, 0.12, 0.12), 0.4), Vector3.ZERO, Vector3(0.006, 0.002, 0.006))
+		items.append({"node": nd, "pos": sp[0], "alive": true})
+	items_left = items.size()
+
+func _build_unha_roxa() -> void:
+	_nail_basics()
+	var mat: ShaderMaterial = nail["mat"]
+	mat.set_shader_parameter("hematoma", 1.0)
+
 func _build_verruga() -> void:
 	n["red"] = _lesion(L_INFLAM, size * 1.2)
 	_lmat(n["red"]).set_shader_parameter("strength", 0.4)
@@ -1048,7 +1178,9 @@ func _update_worm() -> void:
 
 func _rub_target() -> MeshInstance3D:
 	match id:
-		"espinha", "furunculo", "unha_pus", "unha_encravada": return n.get("splat")
+		"espinha", "cisto", "furunculo", "abscesso", "unha_pus", "unha_encravada", "unha_roxa": return n.get("splat")
+		"ralado": return n.get("grime") if stage == 1 else null
+		"bicho_pe", "espinhos": return n.get("blood")
 		"bolha": return n.get("splat")
 		"farpa", "pelo_encravado", "carrapato", "verme": return n.get("blood")
 		"sujeira": return n.get("dirt")
@@ -1103,7 +1235,7 @@ func _visual() -> void:
 	var p := clampf(progress, 0.0, 1.0)
 	var tl := tool()
 	match id:
-		"espinha":
+		"espinha", "cisto":
 			if stage == 1:
 				_squeeze_dome(p, 0.75)
 				_pus_string(n["dome"].position + Vector3(0, size * 0.42 * (1.0 - p * 0.6), 0), p * 0.11, 0.009)
@@ -1112,6 +1244,19 @@ func _visual() -> void:
 		"bolha":
 			if stage == 0:
 				_lset("dome", "swell", p * 0.1)
+		"ralado":
+			if stage == 2:
+				_lset("scrape", "heal", p * 0.8)
+				_lset("red", "heal", p * 0.5)
+		"bicho_pe":
+			if stage == 0:
+				_lset("dome", "swell", p * 0.25)
+			elif stage == 1:
+				n["sac"].position.y = -0.006 + p * 0.03
+				n["sac"].scale = Vector3.ONE * (1.0 + p * 0.25)
+		"unha_roxa":
+			if stage == 0:
+				(nail["mat"] as ShaderMaterial).set_shader_parameter("hematoma", 1.0 - p * 0.15)
 		"farpa":
 			if stage == 0:
 				n["splinter"].position = n["dir"] * p * 0.1
@@ -1151,7 +1296,7 @@ func _visual() -> void:
 		"fungo_unha":
 			if stage == 0:
 				n["thick"].scale = Vector3(1.0, lerpf(2.2, 1.0, p), 1.0)
-		"furunculo":
+		"furunculo", "abscesso":
 			match stage:
 				0:
 					_lset("red", "strength", 1.0)
@@ -1260,6 +1405,14 @@ func _remove_item(it: Dictionary) -> void:
 		"larvas":
 			_fly_off(it["node"])
 			Sfx.play("squish", 0.25)
+		"ralado":
+			_fly_off(it["node"])
+			_burst(it["pos"], BLOOD_C, 3, 0.3, 0.005, 40.0)
+			Sfx.play("pull", 0.3, -6)
+		"espinhos":
+			_fly_off(it["node"])
+			_burst(it["pos"], BLOOD_C, 2, 0.25, 0.004, 40.0)
+			Sfx.play("pull", 0.3, -8)
 	GameData.vibrate(15)
 
 # =================================================================== início/fim de etapa
@@ -1271,6 +1424,10 @@ func _on_stage_start(s: int) -> void:
 		"larvas":
 			if s == 2:
 				n["blood"] = _lesion(L_BLOOD, size * 0.95, Vector2.ZERO, true, 0.009)
+		"espinhos":
+			if s == 1:
+				n["blood"] = _lesion(L_BLOOD, size * 1.0, Vector2.ZERO, true, 0.009)
+				_lmat(n["blood"]).set_shader_parameter("strength", 0.7)
 
 func _on_stage_end(s: int) -> void:
 	if def["stages"][s][0] == "curativo" and not n.has("bandage"):
@@ -1293,7 +1450,7 @@ func _on_stage_end_rest(s: int) -> void:
 	var up := global_basis.y
 	var gp := global_position
 	match id:
-		"espinha":
+		"espinha", "cisto":
 			if s == 0:
 				_lset("dome", "hole", 1.0)
 				_lset("dome", "swell", 0.0)
@@ -1317,6 +1474,27 @@ func _on_stage_end_rest(s: int) -> void:
 				tw.tween_method(func(v): dm.set_shader_parameter("deflate", v), 0.0, 1.0, 1.2)
 				n["splat"] = _lesion(L_FLUID, size * 1.4, Vector2.ZERO, true, 0.008)
 				_burst(gp + up * 0.02, Color(1, 1, 0.95, 0.7), 12, 0.5, 0.01, 60.0)
+		"bicho_pe":
+			if s == 0:
+				Sfx.play("poke")
+				_burst(global_position + global_basis.y * 0.02, Color(1, 1, 0.95, 0.7), 5, 0.3, 0.006, 40.0)
+			elif s == 1:
+				_fly_off(n["sac"])
+				_deflate("dome", 0.5)
+				n["blood"] = _lesion(L_BLOOD, 0.035, Vector2.ZERO, true, 0.009)
+				n["crater"] = _lesion(L_WOUND, 0.025, Vector2.ZERO, false, 0.006)
+				_burst(global_position, BLOOD_C, 8, 0.6, 0.008, 40.0)
+				popped.emit(self, BLOOD_C)
+				Sfx.play("pull")
+		"unha_roxa":
+			if s == 0:
+				var nm: ShaderMaterial = nail["mat"]
+				create_tween().tween_method(func(v): nm.set_shader_parameter("hematoma", v), 0.85, 0.3, 0.8)
+				var cp: Vector3 = n["center"].global_position
+				n["splat"] = _lesion(L_BLOOD, nail["w"] * 0.9, Vector2(cp.x - global_position.x, cp.z - global_position.z), true, 0.012)
+				body.spawn_drops(cp + nail["normal"] * 0.01, nail["normal"], L_BLOOD, 8, 0.7, 0.008, 0.35)
+				popped.emit(self, BLOOD_C)
+				Sfx.play("splat")
 		"farpa":
 			if s == 0:
 				_fly_off(n["piv"])
@@ -1379,7 +1557,7 @@ func _on_stage_end_rest(s: int) -> void:
 				Sfx.play("splat")
 			elif s == 3:
 				_nail_bandage()
-		"furunculo":
+		"furunculo", "abscesso":
 			if s == 0:
 				_end_guide()
 				Sfx.play("cut")
@@ -1428,10 +1606,10 @@ func _on_done() -> void:
 	# vermelhidão diminui mas deixa marca; sujeira/pus que sobrou fica (limpe direito!)
 	if n.has("red") and is_instance_valid(n["red"]):
 		_heal_lesion("red", 0.55, 1.2)
-	if id in ["espinha", "bolha", "farpa", "pelo_encravado", "carrapato", "crosta", "calo", "furunculo", "verme", "larvas", "favo", "verruga", "machucado"]:
+	if id in ["espinha", "cisto", "bolha", "farpa", "pelo_encravado", "carrapato", "crosta", "calo", "furunculo", "abscesso", "verme", "larvas", "favo", "verruga", "machucado", "ralado", "bicho_pe", "espinhos"]:
 		var mk := _lesion(14, size * (1.1 if id in ["larvas", "favo", "furunculo"] else 0.75), Vector2.ZERO, false, 0.003)
 		var mm := _lmat(mk)
-		mm.set_shader_parameter("pore", 1.0 if id in ["espinha", "pelo_encravado", "carrapato", "farpa"] else 0.0)
+		mm.set_shader_parameter("pore", 1.0 if id in ["espinha", "cisto", "pelo_encravado", "carrapato", "farpa", "bicho_pe"] else 0.0)
 		mm.set_shader_parameter("strength", 0.0)
 		create_tween().tween_method(func(v): mm.set_shader_parameter("strength", v), 0.0, 1.0, 1.2)
 		n["mark"] = mk
@@ -1440,8 +1618,17 @@ func _on_done() -> void:
 			var hm := h.material_override as ShaderMaterial
 			create_tween().tween_method(func(v): hm.set_shader_parameter("scar", v), 0.0, 1.0, 1.5)
 	match id:
-		"espinha", "pelo_encravado", "bolha", "furunculo", "unha_pus":
+		"espinha", "cisto", "pelo_encravado", "bolha", "furunculo", "abscesso", "unha_pus", "bicho_pe":
 			_shrink("dome", 1.2)
+		"pelos":
+			# depois de raspar fica a barbinha
+			var st := _lesion(15, size * 1.3, Vector2.ZERO, false, 0.003)
+			var sm := _lmat(st)
+			sm.set_shader_parameter("strength", 0.0)
+			create_tween().tween_method(func(v): sm.set_shader_parameter("strength", v), 0.0, 1.0, 0.8)
+		"unha_roxa":
+			var nm: ShaderMaterial = nail["mat"]
+			create_tween().tween_method(func(v): nm.set_shader_parameter("hematoma", v), 0.3, 0.18, 1.0)
 		"crosta":
 			_fade_lesion("crust", 0.9)
 		"calo":

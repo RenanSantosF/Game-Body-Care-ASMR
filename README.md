@@ -82,6 +82,15 @@ Furar/cortar pele saudável cria um machucado que precisa de algodão e curativo
 | 3 | Ferida cheia de buracos | Pano → Espremedor (cada buraco) → Algodão → Pomada |
 | 3 | Unha encravada | Alicate → Pinça → Algodão → Curativo |
 | 3 | Verruga | Spray gelo → Raspador → Pomada |
+| 2 | Cisto sebáceo | Agulha → Espremedor (sai a "massa") → Algodão |
+| 2 | Ralado com sujeira | Pinça (pedrinhas) → Pano → Pomada → Curativo |
+| 2 | Espinhos de cacto | Pinça (um por um) → Algodão |
+| 2 | Unha roxa (sangue preso) | Agulha → Algodão |
+| 3 | Abscesso enorme | Bisturi → Espremedor → Algodão → Curativo |
+| 3 | Bicho-de-pé (só pé) | Agulha → Pinça (puxar) → Algodão → Curativo |
+
+Cada problema sai com tamanho e cor de pus/sangue diferentes, e a mesma fase evita repetir o que saiu na anterior.
+Pano e algodão continuam limpando a sujeira que sobrou mesmo depois do problema estar "pronto".
 
 ## Estrutura
 
