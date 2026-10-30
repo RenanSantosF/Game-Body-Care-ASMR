@@ -1,8 +1,8 @@
-!assets/body/*_meta.json
-*.aab
-*.apk
 .godot/
+export/
+build/
+*.apk
+*.aab
 android/build/
 assets/body/*.json
-build/
-export/
+!assets/body/*_meta.json
