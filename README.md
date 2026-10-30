@@ -38,15 +38,14 @@ Renderizador: **Compatibility (OpenGL ES 3)**, sem sombras dinâmicas (sombra de
 
 | Gesto | Ação |
 |---|---|
-| 1 dedo com ferramenta | move a ferramenta (ela fica **acima e à esquerda** do dedo, para você ver) |
-| 2º dedo (com o 1º em cima do problema) | **aciona**: fecha a pinça, aperta o espremedor, fura, borrifa, cola o curativo |
-| 2 dedos (fora de um problema) | **pinça para zoom** e arrastar para mover a câmera |
-| 1 dedo sem ferramenta | move a câmera |
-| PC | botão esquerdo = ferramenta, **direito/Espaço = 2º dedo**, roda = zoom, botão do meio = mover |
+| 1 dedo | **mira** a ferramenta (ela fica acima e à esquerda do dedo). Mirar não faz nada sozinho |
+| 2º dedo em qualquer lugar | **usa** a ferramenta: fura, corta, limpa, raspa, espreme, puxa, cola o curativo |
+| PC | botão esquerdo = mirar, **direito ou Espaço = usar** |
 
-A **setinha amarela** mostra o próximo problema. Puxar com a pinça é "mão sobre mão":
-feche, puxe, solte e pegue de novo. A limpeza só conclui quando a área toda foi esfregada,
-e a pele fica com **marca** depois de curar (vermelhidão leve, cicatriz, casquinha).
+A câmera é automática: ao terminar um problema ela vai sozinha para o próximo (a seta e o anel
+de progresso mostram onde e quanto falta). Só ferramentas que machucam (agulha, bisturi,
+alicate, lâmina, raspador, lixa, espremedor, pinça) causam dor se usadas no lugar errado.
+Furar/cortar pele saudável cria um machucado que precisa de algodão e curativo.
 
 ## Como jogar
 

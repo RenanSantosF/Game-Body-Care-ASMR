@@ -71,6 +71,7 @@ var pull_max := 0.0
 var tool_pos := Vector3.ZERO
 var tool_vel := Vector3.ZERO
 var guide: GuideArrow
+var pending_focus := false
 
 var hud: CanvasLayer
 var hud_root: Control
@@ -232,11 +233,10 @@ func _begin() -> void:
 		await get_tree().create_timer(0.9).timeout
 		_toast("CASO EXTREMO!", UIKit.RED, 64, 1.3)
 	await get_tree().create_timer(1.0).timeout
-	focus = _first_problem()
+	_focus_on(_first_problem())
 	input_ok = true
-	_toast("Dois dedos: zoom. Segundo dedo: usar a ferramenta.", UIKit.YELLOW, 26, 2.6)
-	if level == 1:
-		_toast("Escolha a ferramenta e toque no problema!", UIKit.YELLOW, 32, 3.0)
+	if level <= 2:
+		_toast("1 dedo mira. Toque com OUTRO dedo para usar a ferramenta.", UIKit.YELLOW, 26, 3.2)
 	_update_labels()
 
 func _first_problem() -> Problem:
@@ -312,10 +312,11 @@ func _focus_on(p: Problem) -> void:
 	focus = p
 	wide = false
 	var target := p.center()
-	var d := clampf(0.55 + p.focus_radius() * 2.6, 0.75, 1.5)
+	var d := clampf(0.6 + p.focus_radius() * 2.6, 0.92, 1.6)
 	# um pouco acima do centro da tela por causa da barra de ferramentas
 	var look := target - CAM_UP * d * 0.12
 	look.y = 0.0
+	look.x = maxf(look.x, -2.2 + d * 0.62)
 	_move_cam(_cam_pos_for(look, d), look)
 	_update_labels()
 	for q in problems:
@@ -340,10 +341,12 @@ func _update_guide() -> void:
 		lbl_hint.text = "Toque com OUTRO dedo para %s!" % verb
 	var p := focus if focus and not focus.done else _next_problem(cam_look)
 	focus = p
-	if p == null or finished or (pressing and active == p):
+	if p == null or finished:
 		guide.visible = false
 		return
 	guide.visible = true
+	guide.working = pressing and active == p
+	guide.progress = p.progress
 	guide.behind = cam.is_position_behind(p.center())
 	guide.target = cam.unproject_position(p.center())
 	guide.radius = _screen_radius(p)
@@ -584,21 +587,10 @@ func _on_touch(idx: int, pos: Vector2, down: bool) -> void:
 		if touches.size() == 1:
 			tool_touch = idx
 			_tool_down(pos + TOOL_OFFSET)
-		elif touches.size() == 2:
-			if tool_touch >= 0 and active != null:
-				# segundo dedo aciona a ferramenta
-				trig_touch = idx
-				_trigger(true)
-			else:
-				# dois dedos: zoom e mover a câmera
-				if tool_touch >= 0:
-					_tool_up()
-				tool_touch = -1
-				cam_gesture = true
-				var ps: Array = touches.values()
-				pinch_d0 = maxf(20.0, ps[0].distance_to(ps[1]))
-				cam_d0 = cam_dist
-				pan_last = (ps[0] + ps[1]) * 0.5
+		elif tool_touch >= 0 and trig_touch < 0:
+			# segundo dedo em qualquer lugar = usar a ferramenta
+			trig_touch = idx
+			_trigger(true)
 	else:
 		touches.erase(idx)
 		if idx == trig_touch:
@@ -608,36 +600,18 @@ func _on_touch(idx: int, pos: Vector2, down: bool) -> void:
 			tool_touch = -1
 			_trigger(false)
 			_tool_up()
-		if touches.size() < 2:
-			cam_gesture = false
-		if touches.is_empty():
-			cam_gesture = false
 
-func _on_touch_drag(idx: int, pos: Vector2, rel: Vector2) -> void:
+func _on_touch_drag(idx: int, pos: Vector2, _rel: Vector2) -> void:
 	touches[idx] = pos
-	if cam_gesture and touches.size() >= 2:
-		var ps: Array = touches.values()
-		var d := maxf(20.0, ps[0].distance_to(ps[1]))
-		var mid: Vector2 = (ps[0] + ps[1]) * 0.5
-		if cam_tween:
-			cam_tween.kill()
-		var target := clampf(cam_d0 * pinch_d0 / d, MIN_D, WIDE_D)
-		_cam_zoom(target / maxf(cam_dist, 0.001), mid)
-		_cam_pan(mid - pan_last)
-		pan_last = mid
-		return
 	if idx == tool_touch:
-		if selected == "" and active == null:
-			# sem ferramenta, um dedo move a câmera
-			pan_last = pos - rel
-			_cam_pan(rel)
-			return
 		_drag(pos + TOOL_OFFSET)
 
 func _tool_down(pos: Vector2) -> void:
 	if selected == "":
 		pressing = false
 		last_pos = pos
+		_toast("Escolha uma ferramenta embaixo!", UIKit.YELLOW, 32, 1.0)
+		_bounce(tool_bar.get_parent())
 		return
 	_press(pos)
 
@@ -645,24 +619,35 @@ func _tool_up() -> void:
 	if pressing:
 		_release()
 
-## Segundo dedo: fecha a pinça, aperta o espremedor, fura com a agulha, aplica o curativo...
+const HARMFUL := ["agulha", "bisturi", "alicate", "lamina", "raspador", "lixa", "espremedor", "pinca"]
+
+## Segundo dedo: só ele faz a ferramenta agir (furar, cortar, limpar, puxar, colar...)
 func _trigger(on: bool) -> void:
 	if on == triggering:
 		return
 	triggering = on
 	if not on:
+		if active:
+			active.end_stroke()
+		skin_cut = null
+		return
+	if not pressing or selected == "":
 		return
 	GameData.vibrate(12)
-	Sfx.play("tap", 0.1, -10)
 	var a := active
 	if a == null:
-		if pressing and selected != "":
-			var p := _pick_problem(last_pos)
-			if p and p.tool() == selected:
-				_start_on(p, last_pos)
-				a = active
-		if a == null:
+		var p := _pick_problem(last_pos)
+		if p == null:
+			_skin_touch(last_pos)
 			return
+		if p.tool() != selected:
+			_wrong(p, last_pos)
+			return
+		_start_on(p, last_pos)
+		a = active
+	_act_start(a)
+
+func _act_start(a: Problem) -> void:
 	match a.mech():
 		Defs.Mech.PICK:
 			if not a.pick(last_pos, 70.0, cam):
@@ -673,6 +658,16 @@ func _trigger(on: bool) -> void:
 			grip_start = last_pos
 			pull_max = 0.0
 			Sfx.play("pull", 0.2, -10)
+		Defs.Mech.CUT:
+			stroke_first = true
+			if a.has_paint_cut():
+				_paint_cut(a, last_pos)
+			else:
+				_cut_start(a, last_pos)
+		Defs.Mech.RUB:
+			_do_rub(a, last_pos, 0.0)
+		Defs.Mech.SWEEP:
+			a.sweep(last_pos, _sweep_r(), cam)
 
 func _screen_radius(p: Problem) -> float:
 	var c := cam.unproject_position(p.center())
@@ -721,17 +716,8 @@ func _press(pos: Vector2) -> void:
 	last_pos = pos
 	frame_pull = 0.0
 	var p := _pick_problem(pos)
-	if p == null:
-		_skin_touch(pos)
-		return
-	if selected == "":
-		_toast("Escolha uma ferramenta!", UIKit.YELLOW, 38, 1.0)
-		_bounce(tool_bar.get_parent())
-		return
-	if p.tool() != selected:
-		_wrong(p, pos)
-		return
-	_start_on(p, pos)
+	if p and p.tool() == selected:
+		_start_on(p, pos)
 
 ## Ferramenta afiada em pele saudável machuca
 func _skin_touch(pos: Vector2) -> void:
@@ -743,12 +729,17 @@ func _skin_touch(pos: Vector2) -> void:
 	last_skin_hurt = now
 	mistakes += 1
 	_hurt(10.0, Defs.OUCH)
-	_toast("Cuidado! Você cortou a pele!", UIKit.RED, 34, 1.0)
+	if selected in ["bisturi", "lamina", "alicate"]:
+		_toast("Cuidado! Você cortou a pele!", UIKit.RED, 34, 1.0)
 	var w := _make_wound(hit[0], hit[1])
 	if w:
-		skin_cut = w
 		w.wound_stroke(hit[0], true)
-		Sfx.play("cut")
+		if selected in ["bisturi", "lamina", "alicate"]:
+			skin_cut = w
+			Sfx.play("cut")
+		else:
+			Sfx.play("poke")
+			_toast("Você furou a pele! Vai precisar limpar e fazer curativo.", UIKit.RED, 26, 1.6)
 
 func _make_wound(pos: Vector3, normal: Vector3) -> Problem:
 	if wounds >= MAX_WOUNDS:
@@ -768,25 +759,8 @@ func _start_on(p: Problem, pos: Vector2) -> void:
 		focus = p
 	p.speed = GameData.speed_mult(selected) * _dirt_mult(p)
 	lbl_hint.text = Defs.MECH_HINT[p.mech()]
-	match p.mech():
-		Defs.Mech.TAP, Defs.Mech.PICK, Defs.Mech.HOLD:
-			if triggering:
-				triggering = false
-				_trigger(true)
-		Defs.Mech.SWEEP:
-			p.sweep(pos, _sweep_r(), cam)
-		Defs.Mech.CUT:
-			stroke_first = true
-			if p.has_paint_cut():
-				_paint_cut(p, pos)
-			else:
-				_cut_start(p, pos)
-		Defs.Mech.PULL:
-			p.pull_dir = Vector3(cam.global_basis.x.x, 0, cam.global_basis.x.z).normalized()
-			grip_start = pos
-			pull_max = 0.0
-		Defs.Mech.RUB:
-			_do_rub(p, pos, 0.0)
+	if p.mech() == Defs.Mech.PULL:
+		p.pull_dir = Vector3(cam.global_basis.x.x, 0, cam.global_basis.x.z).normalized()
 
 ## Corte de verdade: a lâmina risca a pele exatamente onde o dedo passa
 func _paint_cut(p: Problem, pos: Vector2) -> void:
@@ -864,14 +838,18 @@ func _do_rub(p: Problem, pos: Vector2, px: float) -> void:
 		var o := cam.project_ray_origin(pos)
 		var d := cam.project_ray_normal(pos)
 		wpos = o + d * ((p.center().y - o.y) / d.y)
+	var gained := 0.0
 	if p.uses_nail_mask():
-		p.rub_nail(wpos, BRUSH.get(selected, 0.04) * 0.6)
+		gained = p.rub_nail(wpos, BRUSH.get(selected, 0.04) * 0.6)
 	else:
-		p.rub(wpos, px, BRUSH.get(selected, 0.04))
+		gained = p.rub(wpos, px, BRUSH.get(selected, 0.04))
 	if selected in ["pano", "algodao"]:
 		body.clean_stains(wpos, BRUSH.get(selected, 0.04))
-		if px > 0.0:
-			tool_model.soil(p.soil_color(), px * 0.0006)
+	# só mostra efeito/suja a ferramenta quando de fato está tirando algo
+	if gained > 0.0004:
+		_rub_fx(p)
+		if selected in ["pano", "algodao"]:
+			tool_model.soil(p.soil_color(), minf(0.05, gained * 2.0))
 	_dirty_pain(p, 0.02)
 
 func _drag(pos: Vector2) -> void:
@@ -879,8 +857,12 @@ func _drag(pos: Vector2) -> void:
 	last_pos = pos
 	if active == null and selected != "":
 		var p := _pick_problem(pos)
-		if p and p.tool() == selected and p.mech() in [Defs.Mech.RUB, Defs.Mech.SWEEP]:
+		if p and p.tool() == selected:
 			_start_on(p, pos)
+			if triggering and p.mech() in [Defs.Mech.RUB, Defs.Mech.SWEEP, Defs.Mech.CUT]:
+				_act_start(p)
+	if not triggering:
+		return
 	if skin_cut and is_instance_valid(skin_cut) and pressing:
 		var hit := _ray_body(pos)
 		if not hit.is_empty() and hit[0].distance_to(skin_cut.center()) < skin_cut.size * 2.0:
@@ -893,7 +875,6 @@ func _drag(pos: Vector2) -> void:
 	match a.mech():
 		Defs.Mech.RUB:
 			if _within(a, pos, 1.8):
-				_rub_fx(a)
 				_do_rub(a, pos, rel)
 		Defs.Mech.CUT:
 			if a.has_paint_cut():
@@ -903,12 +884,16 @@ func _drag(pos: Vector2) -> void:
 		Defs.Mech.PULL:
 			frame_pull += rel
 		Defs.Mech.SWEEP:
-			if a.sweep(pos, _sweep_r(), cam) == 0:
-				_rub_fx(a)
+			a.sweep(pos, _sweep_r(), cam)
 
 func _release() -> void:
 	pressing = false
 	triggering = false
+	if pending_focus and not finished:
+		pending_focus = false
+		var nx := _next_problem(cam_look)
+		if nx:
+			_focus_on(nx)
 	if active:
 		active.end_stroke()
 	active = null
@@ -944,6 +929,9 @@ func _rub_fx(p: Problem) -> void:
 			Sfx.play_throttled("scrub", 0.15, 0.2, -10)
 
 func _wrong(p: Problem, pos: Vector2) -> void:
+	if not selected in HARMFUL:
+		_toast("%s não serve para isso. Use: %s" % [Defs.TOOLS[selected]["name"], Defs.TOOLS[p.tool()]["name"]], UIKit.YELLOW, 26, 1.4)
+		return
 	if now - last_mistake < 0.8:
 		return
 	last_mistake = now
@@ -989,6 +977,8 @@ func _on_stage_done(p: Problem, fin: bool) -> void:
 		_say(Defs.RELIEF.pick_random())
 	var sp := cam.unproject_position(p.center())
 	_float_text("+%d" % c, sp + Vector2(0, -40), UIKit.YELLOW, 40)
+	if not fin:
+		_toast("PRONTO! Agora: %s" % Defs.TOOLS[p.tool()]["name"], UIKit.GREEN, 34, 1.2)
 	if combo >= 2:
 		_toast("COMBO x%d!" % combo, UIKit.PINK, 48, 0.8)
 	Sfx.play("coin", 0.05, -8)
@@ -1007,7 +997,11 @@ func _on_stage_done(p: Problem, fin: bool) -> void:
 			_finish()
 			return
 		if p == focus:
-			focus = _next_problem(p.center())
+			pending_focus = true
+			await get_tree().create_timer(0.7).timeout
+			if not finished and not pressing and pending_focus:
+				pending_focus = false
+				_focus_on(_next_problem(p.center()))
 
 func _on_popped(p: Problem, _c: Color) -> void:
 	shake = 0.025
@@ -1050,7 +1044,7 @@ func _fail() -> void:
 	var hc := CenterContainer.new()
 	hc.add_child(h)
 	vb.add_child(hc)
-	var cont := UIKit.btn("Acalmar e continuar (AD)", UIKit.GREEN, 24, Vector2(340, 76))
+	var cont := UIKit.btn("Tentar de novo daqui (AD)", UIKit.GREEN, 26, Vector2(380, 84))
 	cont.pressed.connect(func(): Ads.show_rewarded(func():
 		dim.queue_free()
 		modal_open = false
@@ -1060,7 +1054,7 @@ func _fail() -> void:
 		face.hurt_flash = 0.0
 		_say("Tá bom... mas com cuidado!")))
 	h.add_child(cont)
-	var retry := UIKit.btn("Tentar de novo", UIKit.BLUE, 24, Vector2(340, 76))
+	var retry := UIKit.btn("Recomeçar a fase", UIKit.BLUE, 22, Vector2(340, 70))
 	retry.pressed.connect(func(): get_tree().reload_current_scene())
 	h.add_child(retry)
 	var menu := UIKit.btn("Menu", UIKit.PURPLE, 24, Vector2(340, 76))
@@ -1282,7 +1276,7 @@ func _build_hud() -> void:
 		hint_until = now + 30.0
 		_toast("Dicas ligadas por 30s!", UIKit.YELLOW, 36, 1.2)
 		_update_labels()))
-	side.add_child(hint)
+	hint.visible = false
 	var zoom := UIKit.btn("Zoom", UIKit.BLUE, 22, Vector2(140, 62))
 	zoom.pressed.connect(func():
 		if not input_ok:
@@ -1291,7 +1285,7 @@ func _build_hud() -> void:
 			_focus_on(_next_problem(cam_look))
 		else:
 			_go_wide())
-	side.add_child(zoom)
+	zoom.visible = false
 
 	guide = GuideArrow.new()
 	hud_root.add_child(guide)
@@ -1371,6 +1365,9 @@ func _select_tool(id: String) -> void:
 	_update_labels()
 
 func _hints_on() -> bool:
+	return true
+
+func _hints_old() -> bool:
 	return level <= 2 or now < hint_until
 
 func _target() -> Problem:
@@ -1397,7 +1394,7 @@ func _update_labels() -> void:
 	if _dirt_mult(p) < 1.0:
 		lbl_hint.text = "Tá sujo em volta: limpe com o Pano primeiro!"
 	elif _hints_on():
-		lbl_hint.text = "Use: %s  -  %s" % [Defs.TOOLS[p.tool()]["name"], Defs.MECH_HINT[p.mech()]]
+		lbl_hint.text = "Use: %s  -  %s (com o 2º dedo)" % [Defs.TOOLS[p.tool()]["name"], Defs.MECH_HINT[p.mech()]]
 	elif selected == "":
 		lbl_hint.text = "Escolha uma ferramenta"
 	else:

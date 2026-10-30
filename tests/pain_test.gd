@@ -20,6 +20,8 @@ func _ready() -> void:
 	for i in 12:
 		var c: Vector2 = game.cam.unproject_position(p.center())
 		game._press(c)
+		game._trigger(true)
+		game._trigger(false)
 		game._release()
 		await get_tree().create_timer(0.9).timeout
 		if game.finished:

@@ -47,6 +47,29 @@ func build(p_part: String, skin: Color) -> void:
 	cam_center = Vector3(0.1, 0, -0.15) if part == "mao" else Vector3(-0.1, 0, 0)
 	_build_shadow()
 	_build_nails()
+	_build_towel()
+
+## Toalha enrolada cobrindo o fim do braço/perna (como na clínica)
+func _build_towel() -> void:
+	var x0: float = float(meta["x0"])
+	var fm := MeshGen.shader_mat("res://shaders/fabric.gdshader")
+	fm.set_shader_parameter("kind", 0)
+	fm.set_shader_parameter("base", Color(0.96, 0.95, 0.92))
+	fm.set_shader_parameter("wet", 0.0)
+	for k in 2:
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = 0.52 - k * 0.06
+		cyl.bottom_radius = cyl.top_radius
+		cyl.height = 3.2
+		cyl.radial_segments = 40
+		cyl.rings = 4
+		var mi := MeshInstance3D.new()
+		mi.mesh = cyl
+		mi.material_override = fm
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+		mi.rotation.x = PI / 2
+		mi.position = Vector3(x0 + 0.42 - k * 0.62, -0.05 + k * 0.04, -0.15)
 
 ## Sombra de contato macia no travesseiro (silhueta borrada do mapa de altura)
 func _build_shadow() -> void:

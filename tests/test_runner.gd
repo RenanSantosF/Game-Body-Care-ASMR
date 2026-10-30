@@ -72,6 +72,7 @@ func solve(game, p: Problem) -> void:
 		Defs.Mech.RUB:
 			var R: float = game._screen_radius(p) * 1.25
 			game._press(c)
+			game._trigger(true)
 			var g := 0
 			while p.stage == st and not p.done and g < 3000:
 				g += 1
@@ -83,6 +84,7 @@ func solve(game, p: Problem) -> void:
 		Defs.Mech.CUT:
 			var path: PackedVector3Array = p.cut_path
 			game._press(_sp(game, path[0]))
+			game._trigger(true)
 			for i in range(1, path.size()):
 				var a2 := _sp(game, path[i - 1])
 				var b2 := _sp(game, path[i])
@@ -121,8 +123,7 @@ func solve(game, p: Problem) -> void:
 						var ip := _sp(game, it["pos"])
 						game._press(ip)
 						game._drag(ip + Vector2(2, 0))
-						if p.mech() == Defs.Mech.PICK:
-							game._trigger(true)
+						game._trigger(true)
 						await get_tree().process_frame
 						game._trigger(false)
 						game._release()

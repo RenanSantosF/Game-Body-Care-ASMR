@@ -123,9 +123,11 @@ func tap() -> void:
 		_add(amount())
 
 ## Esfregar: limpa a máscara sob o pincel (ou acumula distância)
-func rub(wpos: Vector3, px: float, brush_r: float) -> void:
+## Esfregar. Retorna o quanto avançou (0 = não limpou nada novo).
+func rub(wpos: Vector3, px: float, brush_r: float) -> float:
 	if done:
-		return
+		return 0.0
+	var before := progress
 	wet = 1.0
 	if tool() == "algodao" or tool() == "pano":
 		for h in fx_hosts:
@@ -138,13 +140,15 @@ func rub(wpos: Vector3, px: float, brush_r: float) -> void:
 		var cov := _paint(target, wpos, brush_r, 0.3 * speed)
 		# precisa limpar de verdade a área toda (cobertura ponderada >= 92%)
 		progress = clampf(cov / 0.92, 0.0, 1.0)
-		if progress >= 0.995:
+		if progress >= 0.985:
 			progress = 1.0
+		var g := progress - before
 		_visual()
 		if progress >= 1.0:
 			_complete_stage()
-	else:
-		_add(px)
+		return g
+	_add(px)
+	return 1.0 if px > 0.0 else 0.0
 
 ## Corte pintado onde a lâmina passa. Retorna a distância (mundo) até a linha guia.
 func has_paint_cut() -> bool:
@@ -351,6 +355,18 @@ func _lesion(kind: int, half: float, off := Vector2.ZERO, use_mask := false, lif
 	mat.set_shader_parameter("half_size", half)
 	if use_mask:
 		var mk := CleanMask.new()
+		# partes do remendo fora da pele (entre os dedos) já contam como limpas
+		var cell := CleanMask.SIZE / 24
+		for j in 24:
+			for i in 24:
+				var u := -1.0 + 2.0 * (i + 0.5) / 24.0
+				var v := -1.0 + 2.0 * (j + 0.5) / 24.0
+				var lx := (u * cos(rot) - v * sin(rot)) * half
+				var lz := (u * sin(rot) + v * cos(rot)) * half
+				if body.surface(c.x + lx, c.z + lz).is_empty():
+					mk.img.fill_rect(Rect2i(i * cell, j * cell, cell, cell), Color(1, 1, 1, 1))
+		mk.dirty = true
+		mk.flush()
 		mat.set_shader_parameter("mask", mk.tex)
 		mat.set_shader_parameter("use_mask", 1.0)
 		mi.set_meta("mask", mk)
@@ -457,7 +473,7 @@ func _bandage(w: float, l: float, at := Vector3.INF, along := Vector3.INF) -> vo
 	var rot := atan2(fwd.z, fwd.x)
 	var half := maxf(w, l) * 0.5
 	var mi := MeshInstance3D.new()
-	mi.mesh = MeshGen.patch(body, c, half, rot, 0.009, 22)
+	mi.mesh = MeshGen.patch(body, c, half, rot, 0.014, 22)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var m := MeshGen.shader_mat("res://shaders/bandage.gdshader")
 	m.set_shader_parameter("aspect", clampf(minf(w, l) / maxf(w, l), 0.2, 0.9))
@@ -468,6 +484,7 @@ func _bandage(w: float, l: float, at := Vector3.INF, along := Vector3.INF) -> vo
 	var bleedy := id in ["furunculo", "verme", "machucado", "unha_encravada", "larvas"]
 	m.set_shader_parameter("stain", 0.0)
 	m.set_shader_parameter("stain_col", Color(0.62, 0.08, 0.1) if bleedy else Color(0.85, 0.72, 0.35))
+	m.render_priority = 20
 	mi.material_override = m
 	body.add_child(mi)
 	var sp := body.surface(c.x, c.z)
@@ -1023,12 +1040,13 @@ func _rub_target() -> MeshInstance3D:
 	return null
 
 ## Esfregar unha usa a máscara da própria unha
-func rub_nail(wpos: Vector3, brush_r: float) -> bool:
+func rub_nail(wpos: Vector3, brush_r: float) -> float:
 	if not n.has("mask") or nail.is_empty():
-		return false
+		return 0.0
 	var a := amount()
 	if a > 1.0:
-		return false
+		return 0.0
+	var before := progress
 	var nd: Node3D = nail["node"]
 	var lp := nd.to_local(wpos)
 	var w: float = nail["w"]
@@ -1049,12 +1067,13 @@ func rub_nail(wpos: Vector3, brush_r: float) -> bool:
 			cov += mk.img.get_pixel(px, py).r
 			cnt += 1
 	progress = clampf(cov / cnt / 0.9, 0.0, 1.0)
-	if progress >= 0.995:
+	if progress >= 0.985:
 		progress = 1.0
+	var g := progress - before
 	_visual()
 	if progress >= 1.0:
 		_complete_stage()
-	return true
+	return g
 
 func uses_nail_mask() -> bool:
 	return (id == "unha_suja" and stage == 1) or (id == "fungo_unha" and stage == 0)

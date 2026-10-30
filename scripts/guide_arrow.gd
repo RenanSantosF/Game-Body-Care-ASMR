@@ -5,6 +5,8 @@ extends Control
 var target := Vector2.ZERO
 var radius := 30.0
 var behind := false
+var working := false
+var progress := 0.0
 var t := 0.0
 const MARGIN := 70.0
 
@@ -42,6 +44,11 @@ func _draw() -> void:
 		return
 	var col := Color("ffe066")
 	var bounce := absf(sin(t * 4.0)) * 18.0
+	if working and not behind:
+		# anel de progresso da etapa atual
+		draw_arc(target, radius + 14, 0, TAU, 48, Color(0, 0, 0, 0.35), 9.0, true)
+		draw_arc(target, radius + 14, -PI / 2, -PI / 2 + TAU * clampf(progress, 0.0, 1.0), 48, Color("4cd07d"), 7.0, true)
+		return
 	if not behind and r.has_point(target):
 		var pulse := 0.5 + 0.5 * sin(t * 5.0)
 		draw_arc(target, radius + 10 + pulse * 8, 0, TAU, 40, Color(1, 0.9, 0.3, 0.35 + pulse * 0.3), 5.0, true)
