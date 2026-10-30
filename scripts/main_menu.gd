@@ -50,19 +50,17 @@ func _ready() -> void:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(center)
 
-	var title := UIKit.hbox(18)
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title.add_child(UIKit.label("GROSS", 96, Color("9cff57"), 16, Color("2b5a10")))
-	title.add_child(UIKit.label("to", 54, Color.WHITE, 12))
-	title.add_child(UIKit.label("GLOW", 96, Color("ffe066"), 16, Color("8a4b00")))
-	center.add_child(title)
-	center.add_child(UIKit.label("Clínica de cuidados nojentos e satisfatórios", 28, Color.WHITE, 6))
-	var sub := UIKit.label("Pacientes atendidos: %d   |   Estrelas: %d" % [GameData.patients_treated, GameData.total_stars()], 22, Color(1, 1, 1, 0.9), 5)
+	center.add_child(UIKit.label("GROSS", 130, Color("9cff57"), 18, Color("2b5a10")))
+	center.add_child(UIKit.label("to", 60, Color.WHITE, 12))
+	center.add_child(UIKit.label("GLOW", 130, Color("ffe066"), 18, Color("8a4b00")))
+	var tag := UIKit.label("Clínica de cuidados nojentos\ne satisfatórios", 28, Color.WHITE, 6)
+	center.add_child(tag)
+	var sub := UIKit.label("Pacientes atendidos: %d  |  Estrelas: %d" % [GameData.patients_treated, GameData.total_stars()], 22, Color(1, 1, 1, 0.9), 5)
 	center.add_child(sub)
 
 	var play_row := UIKit.hbox()
 	play_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var play := UIKit.btn("JOGAR  -  Fase %d" % GameData.level, UIKit.GREEN, 44, Vector2(460, 110))
+	var play := UIKit.btn("JOGAR  -  Fase %d" % GameData.level, UIKit.GREEN, 44, Vector2(540, 120))
 	play.pressed.connect(func(): _start(GameData.level))
 	play_row.add_child(play)
 	center.add_child(play_row)
@@ -76,12 +74,14 @@ func _ready() -> void:
 	var shop := UIKit.btn("Loja", UIKit.PINK, 30, Vector2(200, 80))
 	shop.pressed.connect(_shop)
 	row.add_child(shop)
-	var free := UIKit.btn("+60 grátis (AD)", UIKit.YELLOW, 26, Vector2(260, 80))
+	center.add_child(row)
+	var free := UIKit.btn("+60 moedas grátis (AD)", UIKit.YELLOW, 28, Vector2(418, 84))
 	free.pressed.connect(func(): Ads.show_rewarded(func():
 		GameData.add_coins(60)
 		Sfx.play("coin")))
-	row.add_child(free)
-	center.add_child(row)
+	var fc := CenterContainer.new()
+	fc.add_child(free)
+	center.add_child(fc)
 
 	if GameData.daily_available():
 		await get_tree().create_timer(0.4).timeout
@@ -162,15 +162,15 @@ func _levels() -> void:
 	var vb: VBoxContainer = m[1]
 	vb.add_child(UIKit.label("FASES", 44, UIKit.PINK))
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(940, 420)
+	scroll.custom_minimum_size = Vector2(640, 760)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	vb.add_child(scroll)
 	var grid := GridContainer.new()
-	grid.columns = 7
+	grid.columns = 5
 	grid.add_theme_constant_override("h_separation", 12)
 	grid.add_theme_constant_override("v_separation", 12)
 	scroll.add_child(grid)
-	var shown := int(ceil((GameData.level + 4) / 7.0)) * 7
+	var shown := int(ceil((GameData.level + 4) / 5.0)) * 5
 	for i in range(1, shown + 1):
 		var unlocked := i <= GameData.level
 		var col := UIKit.RED if LevelGen.is_extreme(i) else UIKit.BLUE
@@ -187,7 +187,7 @@ func _levels() -> void:
 			st.offset_right = -12
 			b.add_child(st)
 		grid.add_child(b)
-	vb.add_child(UIKit.label("Fases vermelhas = CASO EXTREMO (moedas em dobro)", 20, UIKit.DARK, 0))
+	vb.add_child(UIKit.label("Vermelhas = CASO EXTREMO\n(moedas em dobro)", 20, UIKit.DARK, 0))
 	var close := UIKit.btn("Fechar", UIKit.PURPLE, 28, Vector2(200, 70))
 	close.pressed.connect(_close_overlay)
 	var cc := CenterContainer.new()
@@ -201,15 +201,18 @@ func _shop() -> void:
 	var m := UIKit.modal(self)
 	overlay = m[0]
 	var vb: VBoxContainer = m[1]
-	var top := UIKit.hbox(30)
-	top.add_child(UIKit.label("LOJA DE FERRAMENTAS", 40, UIKit.PINK))
-	top.add_child(UIKit.coin_box())
-	vb.add_child(top)
+	vb.add_child(UIKit.label("LOJA", 48, UIKit.PINK))
+	var cbx := CenterContainer.new()
+	cbx.add_child(UIKit.coin_box())
+	vb.add_child(cbx)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(1060, 440)
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size = Vector2(620, 820)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	vb.add_child(scroll)
-	var row := UIKit.hbox(14)
+	var row := GridContainer.new()
+	row.columns = 2
+	row.add_theme_constant_override("h_separation", 12)
+	row.add_theme_constant_override("v_separation", 12)
 	scroll.add_child(row)
 	for id in Defs.TOOL_ORDER:
 		row.add_child(_tool_card(id))
@@ -222,7 +225,7 @@ func _shop() -> void:
 func _tool_card(id: String) -> Control:
 	var d: Dictionary = Defs.TOOLS[id]
 	var card := UIKit.panel(Color.WHITE, 24, 4, Color("d9cff0"))
-	card.custom_minimum_size = Vector2(230, 400)
+	card.custom_minimum_size = Vector2(296, 380)
 	var vb := VBoxContainer.new()
 	vb.alignment = BoxContainer.ALIGNMENT_CENTER
 	vb.add_theme_constant_override("separation", 8)

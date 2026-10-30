@@ -68,6 +68,10 @@ var _hair_mi: MeshInstance3D
 var _hair_dirty := false
 var _worm_pts := PackedVector3Array()
 var _anim := {}
+var fx_hosts: Array = []          # nós com FxMap (corte/sangue pintado ao vivo)
+var cut_host: Node3D              # onde a lâmina corta neste problema
+var guide_uv := PackedVector2Array()
+var wet := 0.0
 
 static var _tube_mats := {}
 
@@ -122,6 +126,12 @@ func tap() -> void:
 func rub(wpos: Vector3, px: float, brush_r: float) -> void:
 	if done:
 		return
+	wet = 1.0
+	if tool() == "algodao" or tool() == "pano":
+		for h in fx_hosts:
+			if is_instance_valid(h):
+				var fx: FxMap = h.get_meta("fx")
+				fx.wipe(host_uv(h, wpos), brush_r / _host_half(h) * FxMap.SIZE * 0.5, 0.25 * speed)
 	var a := amount()
 	var target := _rub_target()
 	if a <= 1.0 and target != null:
@@ -134,6 +144,90 @@ func rub(wpos: Vector3, px: float, brush_r: float) -> void:
 			_complete_stage()
 	else:
 		_add(px)
+
+## Corte pintado onde a lâmina passa. Retorna a distância (mundo) até a linha guia.
+func has_paint_cut() -> bool:
+	return cut_host != null and mech() == Defs.Mech.CUT
+
+func cut_stroke(wpos: Vector3, first: bool) -> float:
+	var fx: FxMap = cut_host.get_meta("fx")
+	if first:
+		fx.end_stroke()
+	fx.cut_to(host_uv(cut_host, wpos), 2.4 if cut_host is MeshInstance3D and cut_host.has_meta("half") else 3.2)
+	var covered := 0
+	for g in guide_uv:
+		if fx.cut_near(g) > 0.5:
+			covered += 1
+	set_cut(float(covered) / maxf(1.0, guide_uv.size()) / 0.8)
+	var md := INF
+	for q in cut_path:
+		md = minf(md, Vector2(q.x - wpos.x, q.z - wpos.z).length())
+	return md
+
+## Raio do dedo contra a cúpula (para cortar em cima do furúnculo)
+func ray_cut_host(o: Vector3, d: Vector3) -> Array:
+	if cut_host == null or cut_host.has_meta("half"):
+		return []
+	var lo := cut_host.to_local(o)
+	var ld := cut_host.global_basis.inverse() * d
+	var a := ld.dot(ld)
+	var b := 2.0 * lo.dot(ld)
+	var c := lo.dot(lo) - 1.0
+	var disc := b * b - 4.0 * a * c
+	if disc < 0.0:
+		return []
+	var tt := (-b - sqrt(disc)) / (2.0 * a)
+	var lp := lo + ld * tt
+	for i in 6:
+		var f := MeshGen.bump_profile(Vector2(lp.x, lp.z).length())
+		tt += (lp.y - f) / maxf(-ld.y, 0.05)
+		lp = lo + ld * tt
+	if lp.y < -0.05:
+		return []
+	return [cut_host.to_global(lp)]
+
+func end_stroke() -> void:
+	if cut_host:
+		(cut_host.get_meta("fx") as FxMap).end_stroke()
+
+func host_uv(h: Node3D, wpos: Vector3) -> Vector2:
+	if h.has_meta("half"):
+		var c: Vector3 = h.get_meta("c")
+		var rot: float = h.get_meta("rot")
+		var half: float = h.get_meta("half")
+		var d := Vector2(wpos.x - c.x, wpos.z - c.z)
+		return Vector2((d.x * cos(rot) + d.y * sin(rot)) / half, (-d.x * sin(rot) + d.y * cos(rot)) / half)
+	var lp := h.to_local(wpos)
+	return Vector2(lp.x, lp.z)
+
+func _host_half(h: Node3D) -> float:
+	if h.has_meta("half"):
+		return h.get_meta("half")
+	return h.scale.x
+
+func _add_fx(h: MeshInstance3D) -> FxMap:
+	var fx := FxMap.new()
+	h.set_meta("fx", fx)
+	var m := h.material_override as ShaderMaterial
+	m.set_shader_parameter("fx", fx.tex)
+	m.set_shader_parameter("fxw", fx.wtex)
+	m.set_shader_parameter("use_fx", 1.0)
+	# direção "morro abaixo" em pixels do mapa
+	var nn := global_basis.y
+	var dw := Vector2(nn.x, nn.z)
+	if dw.length() < 0.05:
+		dw = Vector2(rng.randf_range(-1, 1), rng.randf_range(-1, 1))
+	if h.has_meta("rot"):
+		var rot: float = h.get_meta("rot")
+		dw = Vector2(dw.x * cos(rot) + dw.y * sin(rot), -dw.x * sin(rot) + dw.y * cos(rot))
+	fx.down = dw.normalized() if dw.length() > 0.001 else Vector2(0, 1)
+	fx_hosts.append(h)
+	return fx
+
+func _set_guide_uv() -> void:
+	guide_uv = PackedVector2Array()
+	for q in cut_path:
+		guide_uv.append(host_uv(cut_host, q))
 
 func set_cut(f: float) -> void:
 	if mech() != Defs.Mech.CUT:
@@ -198,6 +292,18 @@ func _complete_stage() -> void:
 		_visual()
 	stage_done.emit(self, done)
 
+## Cor que a ferramenta de limpeza pega ao esfregar
+func soil_color() -> Color:
+	match id:
+		"sujeira": return Color(0.35, 0.24, 0.13)
+		"cravos": return Color(0.75, 0.68, 0.4)
+		"crosta", "calo": return Color(0.55, 0.35, 0.2)
+		"unha_suja": return Color(0.3, 0.2, 0.1)
+		"farpa", "pelo_encravado", "carrapato", "verme", "machucado": return Color(0.6, 0.08, 0.1)
+		"larvas", "favo":
+			return Color(0.8, 0.7, 0.3) if stage == 0 else Color(0.6, 0.1, 0.1)
+	return Color(0.9, 0.78, 0.35)
+
 ## Partículas durante o HOLD
 func hold_color() -> Color:
 	var tl := tool()
@@ -240,6 +346,8 @@ func _lesion(kind: int, half: float, off := Vector2.ZERO, use_mask := false, lif
 	mat.set_shader_parameter("kind", kind)
 	mat.set_shader_parameter("skin", skin)
 	mat.set_shader_parameter("seed", rng.randf() * 50.0)
+	mat.set_shader_parameter("rot", rot)
+	mat.set_shader_parameter("half_size", half)
 	if use_mask:
 		var mk := CleanMask.new()
 		mat.set_shader_parameter("mask", mk.tex)
@@ -279,7 +387,7 @@ func _dome(kind: int, r: float, h: float, pos := Vector3.ZERO) -> MeshInstance3D
 	mat.set_shader_parameter("kind", kind)
 	mat.set_shader_parameter("skin", skin)
 	mat.set_shader_parameter("seed", rng.randf() * 20.0)
-	var mi := MeshGen.inst(self, MeshGen.sphere(1.0), mat, pos + Vector3(0, -h * 0.12, 0), Vector3(r, h, r))
+	var mi := MeshGen.inst(self, MeshGen.bump(), mat, pos + Vector3(0, -0.003, 0), Vector3(r * 1.25, h, r * 1.25))
 	mi.set_meta("base_scale", mi.scale)
 	return mi
 
@@ -366,7 +474,18 @@ func _nail_bandage() -> void:
 	Sfx.play("tap")
 
 func _burst(pos: Vector3, c: Color, amount := 16, spd := 1.0, sz := 0.012, spread := 40.0) -> void:
-	MeshGen.burst(body, pos, c, amount, spd, sz, global_basis.y, spread)
+	var kind := -1
+	if c.is_equal_approx(PUS_C):
+		kind = L_PUS
+	elif c.is_equal_approx(BLOOD_C):
+		kind = L_BLOOD
+	elif c.a < 0.9 and c.r > 0.9:
+		kind = L_FLUID
+	if kind >= 0:
+		body.spawn_drops(pos, global_basis.y, kind, mini(amount / 2 + 1, 10), spd * 0.9, sz * 0.9, spread / 90.0)
+		MeshGen.burst(body, pos, c, amount / 3, spd * 0.8, sz * 0.6, global_basis.y, spread)
+	else:
+		MeshGen.burst(body, pos, c, amount, spd, sz, global_basis.y, spread)
 
 func _cut_guide(pts: PackedVector3Array) -> void:
 	cut_path = pts
@@ -625,7 +744,7 @@ func _build_unha_pus() -> void:
 	var mat := MeshGen.shader_mat(DOME)
 	mat.set_shader_parameter("kind", D_PUSTULE)
 	mat.set_shader_parameter("skin", skin)
-	n["dome"] = MeshGen.inst(holder, MeshGen.sphere(1.0), mat, Vector3.ZERO, Vector3(w * 0.28, w * 0.22, nail["len"] * 0.35))
+	n["dome"] = MeshGen.inst(holder, MeshGen.bump(), mat, Vector3.ZERO, Vector3(w * 0.36, w * 0.2, nail["len"] * 0.45))
 	n["dome"].set_meta("base_scale", n["dome"].scale)
 	n["center"].position = holder.position
 
@@ -657,11 +776,11 @@ func _build_unha_encravada() -> void:
 	var mat := MeshGen.shader_mat(DOME)
 	mat.set_shader_parameter("kind", D_BUMP)
 	mat.set_shader_parameter("skin", skin)
-	n["swell"] = MeshGen.inst(holder, MeshGen.sphere(1.0), mat, Vector3.ZERO, Vector3(w * 0.22, w * 0.2, nail["len"] * 0.5))
+	n["swell"] = MeshGen.inst(holder, MeshGen.bump(), mat, Vector3.ZERO, Vector3(w * 0.3, w * 0.2, nail["len"] * 0.65))
 	var pm := MeshGen.shader_mat(DOME)
 	pm.set_shader_parameter("kind", D_PUSTULE)
 	pm.set_shader_parameter("skin", skin)
-	n["dome"] = MeshGen.inst(holder, MeshGen.sphere(1.0), pm, Vector3(side * 0.008, 0.01, nail["len"] * 0.15), Vector3(w * 0.12, w * 0.12, w * 0.14))
+	n["dome"] = MeshGen.inst(holder, MeshGen.bump(), pm, Vector3(side * 0.008, 0.012, nail["len"] * 0.15), Vector3(w * 0.16, w * 0.12, w * 0.18))
 	# lasca da unha que entrou na pele
 	var sliver := Node3D.new()
 	nd.add_child(sliver)
@@ -689,10 +808,13 @@ func _build_furunculo() -> void:
 	var h := size * 0.55
 	for i in 9:
 		var x := lerpf(-r * 0.85, r * 0.85, float(i) / 8.0)
-		var y := -h * 0.12 + h * sqrt(maxf(0.0, 1.0 - pow(x / r, 2.0))) + 0.003
+		var y := -0.003 + h * MeshGen.bump_profile(x / (r * 1.25)) + 0.003
 		pts.append(to_global(Vector3(x, y, 0)))
 	_cut_guide(pts)
 	n["slit_pts"] = pts
+	cut_host = n["dome"]
+	_add_fx(n["dome"])
+	_set_guide_uv()
 
 func _build_verme() -> void:
 	n["track"] = _lesion(L_TRACK, size * 1.05, Vector2.ZERO, false, 0.005)
@@ -715,6 +837,9 @@ func _build_verme() -> void:
 	flat.add_child(n["bump"])
 	n["bump"].material_override = tube_mat(T_SKIN, skin)
 	_cut_guide(path)
+	cut_host = n["track"]
+	_add_fx(n["track"])
+	_set_guide_uv()
 	var worm := Node3D.new()
 	body.add_child(worm)
 	n["worm"] = worm
@@ -780,14 +905,37 @@ func _build_verruga() -> void:
 	n["dome"] = _dome(D_WART, size * 0.72, size * 0.5)
 
 func _build_machucado() -> void:
-	n["wound"] = _lesion(L_WOUND, size * 0.9, Vector2.ZERO, false, 0.004)
-	n["blood"] = _lesion(L_BLOOD, size * 1.4, Vector2(0.01, 0.01), true, 0.007)
-	_burst(global_position + global_basis.y * 0.01, BLOOD_C, 10, 0.7, 0.008)
+	n["wound"] = _lesion(L_INFLAM, size * 2.2, Vector2.ZERO, true, 0.004)
+	_lmat(n["wound"]).set_shader_parameter("strength", 0.35)
+	cut_host = n["wound"]
+	_add_fx(n["wound"])
+	n["blood"] = n["wound"]
+
+## Corte feito pelo jogador (erro) — pintado onde arrastou
+func wound_stroke(wpos: Vector3, first: bool) -> void:
+	var fx: FxMap = cut_host.get_meta("fx")
+	if first:
+		fx.end_stroke()
+	fx.cut_to(host_uv(cut_host, wpos), 3.4)
+	fx.bleed = 1.0
 
 # =================================================================== animação contínua
 
 func _process(delta: float) -> void:
 	t += delta
+	for h in fx_hosts:
+		if is_instance_valid(h):
+			var fx: FxMap = h.get_meta("fx")
+			fx.step(delta)
+			var m := h.material_override as ShaderMaterial
+			var cur = m.get_shader_parameter("open_amt")
+			var target := 0.85 if fx.cut_pts.size() > 3 else 0.0
+			m.set_shader_parameter("open_amt", lerpf(cur if cur != null else 0.0, target, delta * 1.5))
+	if wet > 0.0:
+		wet = maxf(0.0, wet - delta * 0.35)
+		for key in ["dirt", "splat", "blood", "grime", "oily", "crust", "callus", "wound"]:
+			if n.has(key) and is_instance_valid(n[key]) and n[key] is MeshInstance3D:
+				(n[key].material_override as ShaderMaterial).set_shader_parameter("wet", wet)
 	match id:
 		"carrapato":
 			if n.has("legs"):
@@ -955,7 +1103,7 @@ func _visual() -> void:
 			match stage:
 				0:
 					_lset("red", "strength", 1.0)
-					_draw_slit(p)
+					pass
 				1:
 					_squeeze_dome(p, 0.85)
 					var top := Vector3(0, size * 0.5 * (1.0 - p * 0.7), 0)
@@ -988,10 +1136,21 @@ func _visual() -> void:
 		if rng.randf() < 0.3:
 			_burst(center() + Vector3(rng.randf_range(-size, size), 0.01, rng.randf_range(-size, size)) * Vector3(1, 1, 1), Color(1, 1, 1), 2, 0.1, 0.008, 80.0)
 
+func _deflate(key: String, dur: float) -> void:
+	if not n.has(key) or not is_instance_valid(n[key]):
+		return
+	var d: MeshInstance3D = n[key]
+	var m := d.material_override as ShaderMaterial
+	var bs: Vector3 = d.get_meta("base_scale", d.scale)
+	var tw := create_tween().set_parallel()
+	tw.tween_method(func(v): m.set_shader_parameter("deflate", v), 0.5, 1.0, dur)
+	tw.tween_property(d, "scale", Vector3(bs.x * 0.85, bs.y * 0.6, bs.z * 0.85), dur)
+
 func _squeeze_dome(p: float, max_shrink: float) -> void:
 	if not n.has("dome") or not is_instance_valid(n["dome"]):
 		return
 	var d: MeshInstance3D = n["dome"]
+	(d.material_override as ShaderMaterial).set_shader_parameter("deflate", p * 0.5)
 	var bs: Vector3 = d.get_meta("base_scale", d.scale)
 	var pulse := 1.0 + sin(t * 30.0) * 0.03
 	d.scale = Vector3(bs.x * (1.0 - p * max_shrink * 0.4) * pulse, bs.y * (1.0 - p * max_shrink), bs.z * (1.0 - p * max_shrink * 0.4) * pulse)
@@ -1062,6 +1221,13 @@ func _on_stage_start(s: int) -> void:
 				n["blood"] = _lesion(L_BLOOD, size * 0.95, Vector2.ZERO, true, 0.009)
 
 func _on_stage_end(s: int) -> void:
+	# antisséptico estanca o sangramento
+	if def["stages"][s][0] == "algodao":
+		for h in fx_hosts:
+			if is_instance_valid(h):
+				var fx: FxMap = h.get_meta("fx")
+				fx.bleed = 0.0
+				fx.drips.clear()
 	var up := global_basis.y
 	var gp := global_position
 	match id:
@@ -1075,7 +1241,7 @@ func _on_stage_end(s: int) -> void:
 				_drop_pus()
 				_burst(gp + up * 0.03, PUS_C, 18, 1.1, 0.011, 35.0)
 				n["splat"] = _lesion(L_PUS, size * 1.2, Vector2(rng.randf_range(-0.02, 0.02), rng.randf_range(-0.02, 0.02)), true, 0.008)
-				_shrink("dome", 0.3)
+				_deflate("dome", 0.5)
 				popped.emit(self, PUS_C)
 				Sfx.play("splat")
 		"bolha":
@@ -1083,8 +1249,10 @@ func _on_stage_end(s: int) -> void:
 				_lset("dome", "hole", 1.0)
 				Sfx.play("poke")
 				var d: MeshInstance3D = n["dome"]
-				var tw := create_tween()
-				tw.tween_property(d, "scale", Vector3(d.scale.x * 1.05, d.scale.y * 0.15, d.scale.z * 1.05), 0.9).set_ease(Tween.EASE_OUT)
+				var dm := d.material_override as ShaderMaterial
+				var tw := create_tween().set_parallel()
+				tw.tween_property(d, "scale", Vector3(d.scale.x * 1.05, d.scale.y * 0.5, d.scale.z * 1.05), 1.2).set_ease(Tween.EASE_OUT)
+				tw.tween_method(func(v): dm.set_shader_parameter("deflate", v), 0.0, 1.0, 1.2)
 				n["splat"] = _lesion(L_FLUID, size * 1.4, Vector2.ZERO, true, 0.008)
 				_burst(gp + up * 0.02, Color(1, 1, 0.95, 0.7), 12, 0.5, 0.01, 60.0)
 		"farpa":
@@ -1126,7 +1294,7 @@ func _on_stage_end(s: int) -> void:
 				Sfx.play("poke")
 			elif s == 1:
 				_drop_pus()
-				_shrink("dome", 0.3)
+				_deflate("dome", 0.5)
 				var p: Vector3 = n["holder"].global_position
 				n["splat"] = _lesion(L_PUS, nail["w"] * 0.8, Vector2(p.x - gp.x, p.z - gp.z), true, 0.008)
 				_burst(p + up * 0.02, PUS_C, 16, 0.9, 0.009, 40.0)
@@ -1156,7 +1324,7 @@ func _on_stage_end(s: int) -> void:
 			elif s == 1:
 				_drop_pus("pus")
 				_drop_pus("pus2")
-				_shrink("dome", 0.35)
+				_deflate("dome", 0.6)
 				if n.has("slit"):
 					n["slit"].hide()
 				n["splat"] = _lesion(L_PUS, size * 1.3, Vector2.ZERO, true, 0.008)
@@ -1199,8 +1367,8 @@ func _on_done() -> void:
 		if n.has(key) and is_instance_valid(n[key]):
 			_fade_lesion(key, 0.9)
 	match id:
-		"espinha", "pelo_encravado", "bolha":
-			_shrink("dome", 0.8)
+		"espinha", "pelo_encravado", "bolha", "furunculo", "unha_pus":
+			_shrink("dome", 1.2)
 		"crosta":
 			_fade_lesion("crust", 0.9)
 		"calo":

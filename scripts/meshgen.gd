@@ -183,6 +183,57 @@ static func nail(width: float, length: float, curve: float, tip_extra := 0.0, re
 	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	return m
 
+## Perfil do inchaço: 1 no topo, 0 e plano na borda (encaixa na pele sem quina)
+static func bump_profile(r: float) -> float:
+	return pow(maxf(0.0, 1.0 - r * r), 1.6)
+
+## Malha de inchaço suave (raio 1, altura 1) com uma saia para dentro da pele
+static func bump() -> ArrayMesh:
+	if _cache.has("bump"):
+		return _cache["bump"]
+	var rings := 18
+	var segs := 36
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var idx := PackedInt32Array()
+	verts.append(Vector3(0, 1, 0))
+	norms.append(Vector3.UP)
+	uvs.append(Vector2(0.5, 0.5))
+	for ri in range(1, rings + 2):
+		var r := minf(float(ri) / rings, 1.0) if ri <= rings else 1.06
+		var y := bump_profile(r) if ri <= rings else -0.08
+		# derivada do perfil
+		var dy := -1.6 * pow(maxf(0.0001, 1.0 - r * r), 0.6) * 2.0 * r if r < 1.0 else 0.0
+		for si in segs:
+			var a := TAU * si / segs
+			var x := cos(a) * r
+			var z := sin(a) * r
+			verts.append(Vector3(x, y, z))
+			norms.append(Vector3(-dy * cos(a), 1.0, -dy * sin(a)).normalized())
+			uvs.append(Vector2(x * 0.5 + 0.5, z * 0.5 + 0.5))
+	for si in segs:
+		idx.append_array([0, 1 + si, 1 + (si + 1) % segs])
+	for ri in range(0, rings):
+		var b0 := 1 + ri * segs
+		var b1 := b0 + segs
+		for si in segs:
+			var a0 := b0 + si
+			var a1 := b0 + (si + 1) % segs
+			var c0 := b1 + si
+			var c1 := b1 + (si + 1) % segs
+			idx.append_array([a0, c0, a1, a1, c0, c1])
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
+	arr[Mesh.ARRAY_TEX_UV] = uvs
+	arr[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	_cache["bump"] = m
+	return m
+
 static func sphere(r := 1.0) -> SphereMesh:
 	var key := "sph%.3f" % r
 	if _cache.has(key):

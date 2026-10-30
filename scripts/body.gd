@@ -15,6 +15,9 @@ var paint_dirty := false
 var digits: Array = []
 var nails: Array = []            # [{node, mat, mesh_inst, w, len, dir, normal, r, i}]
 var shadow: MeshInstance3D
+var drops: Array = []            # gotas voando: {mi, pos, vel, kind, size}
+var stains: Array = []           # manchas no corpo (limpáveis): MeshInstance3D
+const MAX_STAINS := 70
 var cam_center := Vector3.ZERO
 var wide_height := 4.6
 
@@ -162,7 +165,108 @@ func stamp(x: float, z: float, brush: Image, scale_px := 1.0) -> void:
 	paint_img.blend_rect(b, Rect2i(0, 0, b.get_width(), b.get_height()), Vector2i(p))
 	paint_dirty = true
 
-func _process(_d: float) -> void:
+func _process(delta: float) -> void:
 	if paint_dirty:
 		paint_dirty = false
 		paint_tex.update(paint_img)
+	_step_drops(delta)
+
+# ------------------------------------------------------------- fluidos
+
+## Gotas físicas (pus/sangue/água): voam, caem e viram mancha onde pousam.
+## kind: 2 = pus, 3 = sangue, 11 = líquido claro
+func spawn_drops(pos: Vector3, dir: Vector3, kind: int, count: int, speed := 0.8, size := 0.012, spread := 0.6) -> void:
+	var col := Color(0.95, 0.8, 0.32) if kind == 2 else (Color(0.5, 0.03, 0.05) if kind == 3 else Color(1, 0.98, 0.9, 0.6))
+	var mat := MeshGen.std(col, 0.08, 0.0, "drop%d" % kind)
+	mat.metallic_specular = 0.9
+	for i in count:
+		if drops.size() > 60:
+			break
+		var d := (dir.normalized() + Vector3(randf_range(-1, 1), randf_range(-0.2, 1), randf_range(-1, 1)) * spread).normalized()
+		var sz := size * randf_range(0.5, 1.3)
+		var mi := MeshGen.inst(self, MeshGen.sphere(1.0), mat, pos, Vector3.ONE * sz)
+		drops.append({"mi": mi, "pos": pos, "vel": d * speed * randf_range(0.5, 1.2), "kind": kind, "size": sz})
+
+func _step_drops(dt: float) -> void:
+	if drops.is_empty():
+		return
+	var keep := []
+	for d in drops:
+		var v: Vector3 = d["vel"]
+		v.y -= 6.0 * dt
+		v *= 1.0 - dt * 0.8
+		var p: Vector3 = d["pos"] + v * dt
+		d["vel"] = v
+		d["pos"] = p
+		var mi: MeshInstance3D = d["mi"]
+		mi.position = p
+		# estica na direção do movimento (gota de verdade)
+		var sp := v.length()
+		if sp > 0.05:
+			mi.basis = MeshGen.basis_from_normal(v.normalized()).scaled(Vector3(d["size"], d["size"] * (1.0 + sp * 0.8), d["size"]))
+		var s := surface(p.x, p.z)
+		var ground: float = s[0].y if not s.is_empty() else -0.15
+		if p.y <= ground:
+			mi.queue_free()
+			if not s.is_empty():
+				add_stain(s[0], d["kind"], d["size"] * (2.2 + sp * 0.6), Vector2(v.x, v.z))
+			continue
+		keep.append(d)
+	drops = keep
+
+func add_stain(pos: Vector3, kind: int, r: float, smear := Vector2.ZERO) -> MeshInstance3D:
+	if stains.size() >= MAX_STAINS:
+		var old: MeshInstance3D = stains.pop_front()
+		if is_instance_valid(old):
+			old.queue_free()
+	var rot := atan2(smear.y, smear.x) if smear.length() > 0.01 else randf() * TAU
+	var mi := MeshInstance3D.new()
+	mi.mesh = MeshGen.patch(self, pos, r, rot, 0.006 + randf() * 0.002, 6)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mat := MeshGen.shader_mat("res://shaders/lesion.gdshader")
+	mat.set_shader_parameter("kind", kind)
+	mat.set_shader_parameter("skin", skin_mat.get_shader_parameter("skin"))
+	mat.set_shader_parameter("seed", randf() * 50.0)
+	mat.set_shader_parameter("rot", rot)
+	mat.set_shader_parameter("half_size", r)
+	var mk := CleanMask.new()
+	mat.set_shader_parameter("mask", mk.tex)
+	mat.set_shader_parameter("use_mask", 1.0)
+	mi.set_meta("mask", mk)
+	mi.set_meta("c", pos)
+	mi.set_meta("rot", rot)
+	mi.set_meta("half", r)
+	mi.material_override = mat
+	add_child(mi)
+	mi.position = pos
+	mi.scale = Vector3(0.2, 1, 0.2)
+	create_tween().tween_property(mi, "scale", Vector3.ONE, 0.12)
+	stains.append(mi)
+	return mi
+
+## Limpa tudo no fim (para a foto do depois)
+func fade_stains() -> void:
+	for st in stains:
+		if is_instance_valid(st):
+			var m := st.material_override as ShaderMaterial
+			create_tween().tween_method(func(v): m.set_shader_parameter("heal", v), 0.0, 1.0, 0.8)
+
+## Esfrega manchas sob o pano/algodão
+func clean_stains(wpos: Vector3, brush_r: float) -> void:
+	for st in stains:
+		if not is_instance_valid(st):
+			continue
+		var c: Vector3 = st.get_meta("c")
+		var half: float = st.get_meta("half")
+		if Vector2(c.x - wpos.x, c.z - wpos.z).length() > half + brush_r:
+			continue
+		var rot: float = st.get_meta("rot")
+		var mk: CleanMask = st.get_meta("mask")
+		var dx := wpos.x - c.x
+		var dz := wpos.z - c.z
+		var u := (dx * cos(rot) + dz * sin(rot)) / half
+		var v := (-dx * sin(rot) + dz * cos(rot)) / half
+		mk.paint(Vector2(u, v), brush_r / half, 0.35)
+		mk.flush()
+		var m := st.material_override as ShaderMaterial
+		m.set_shader_parameter("wet", 1.0)

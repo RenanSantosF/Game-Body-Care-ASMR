@@ -47,10 +47,15 @@ var cut_idx := 0
 var cut_rev := false
 var off_path_t := 0.0
 var rng := RandomNumberGenerator.new()
+var skin_cut: Problem = null       # corte errado sendo feito agora
+var stroke_first := true
+var press_cur := 0.0
+var pull_cur := 0.0
+var last_cut_hurt := -10.0
 
 var hud: CanvasLayer
 var hud_root: Control
-var tool_bar: HBoxContainer
+var tool_bar: GridContainer
 var tool_buttons := {}
 var progress_bar: ProgressBar
 var pain_bar: ProgressBar
@@ -65,6 +70,10 @@ var modal_open := false
 func _ready() -> void:
 	level = GameData.current_level
 	data = LevelGen.make(level)
+	# (dev) laboratório: força problemas/parte específicos
+	if GameData.has_meta("lab_problems"):
+		data["problems"] = GameData.get_meta("lab_problems")
+		data["part"] = GameData.get_meta("lab_part", data["part"])
 	rng.seed = data["seed"] + 99
 	Stage.setup_env(self, data["look"]["pillow"])
 	body = Body.new()
@@ -140,8 +149,13 @@ func _check_tools() -> void:
 	var vb: VBoxContainer = m[1]
 	vb.add_child(UIKit.label("NOVA FERRAMENTA!", 46, UIKit.PINK))
 	vb.add_child(UIKit.label("Este paciente precisa de:", 26, UIKit.DARK, 0))
-	var row := UIKit.hbox(24)
-	vb.add_child(row)
+	var row := GridContainer.new()
+	row.columns = 2
+	row.add_theme_constant_override("h_separation", 20)
+	row.add_theme_constant_override("v_separation", 16)
+	var rc := CenterContainer.new()
+	rc.add_child(row)
+	vb.add_child(rc)
 	var refresh := func():
 		for tl in missing:
 			if not GameData.has_tool(tl):
@@ -213,15 +227,17 @@ func _first_problem() -> Problem:
 
 # =================================================================== câmera
 
+const CAM_UP := Vector3(1, 0, 0)   # retrato: dedos apontam para cima na tela
+
 func _wide_pos() -> Vector3:
-	return body.cam_center + Vector3(0, 3.7, 1.55)
+	return body.cam_center + Vector3(-1.5, 4.3, 0)
 
 func _apply_cam() -> void:
 	var off := Vector3.ZERO
 	if shake > 0.0:
 		off = Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * shake
 	cam.global_position = cam_pos + off
-	cam.look_at(cam_look + off, Vector3.UP)
+	cam.look_at(cam_look + off, CAM_UP)
 
 func _move_cam(pos: Vector3, look: Vector3, dur := 0.7) -> void:
 	if cam_tween:
@@ -238,8 +254,8 @@ func _focus_on(p: Problem) -> void:
 	var target := p.center()
 	var d := clampf(0.55 + p.focus_radius() * 2.6, 0.75, 1.5)
 	# um pouco acima do centro da tela por causa da barra de ferramentas
-	var look := target + Vector3(0, 0, d * 0.08)
-	_move_cam(look + Vector3(0, d, d * 0.42), look)
+	var look := target - CAM_UP * d * 0.12
+	_move_cam(look + Vector3(0, d, 0) - CAM_UP * d * 0.42, look)
 	_update_labels()
 	for q in problems:
 		q.show_guide(q == p and q.tool() == selected)
@@ -298,6 +314,7 @@ func _process(delta: float) -> void:
 					a.pull(amt)
 	frame_pull = 0.0
 	_update_tool_model()
+	_update_deform(delta)
 	_update_hint_glow()
 
 func _update_pain() -> void:
@@ -361,6 +378,45 @@ func _ray_body(pos: Vector2) -> Array:
 	s = body.surface(p.x, p.z)
 	return s
 
+## A pele afunda sob a ferramenta e a pinça puxa a pele junto
+func _update_deform(delta: float) -> void:
+	var pa := 0.0
+	var pr := 0.04
+	var ppos := tool_model.global_position
+	var qa := 0.0
+	var qpos := Vector3(0, -10, 0)
+	if pressing and selected != "" and tool_model.visible:
+		match selected:
+			"espremedor":
+				pa = 0.006
+				if active and active.mech() == Defs.Mech.HOLD:
+					ppos = active.center()
+					pr = active.size * 1.1
+					pa = 0.016 + 0.004 * sin(now * 28.0)
+			"agulha", "bisturi", "alicate":
+				pa = 0.007
+				pr = 0.016
+			"pano", "algodao", "pomada":
+				pa = 0.008
+				pr = 0.05
+			"raspador", "lixa", "lamina":
+				pa = 0.007
+				pr = 0.035
+			"pinca":
+				if active and active.mech() == Defs.Mech.PULL:
+					qpos = active.grip_point()
+					qa = 0.008 + clampf(active.progress, 0.0, 1.0) * 0.02
+			_:
+				pa = 0.003
+	press_cur = lerpf(press_cur, pa, minf(1.0, delta * 14.0))
+	pull_cur = lerpf(pull_cur, qa, minf(1.0, delta * 10.0))
+	RenderingServer.global_shader_parameter_set("press_pos", ppos)
+	RenderingServer.global_shader_parameter_set("press_amt", press_cur)
+	RenderingServer.global_shader_parameter_set("press_r", pr)
+	RenderingServer.global_shader_parameter_set("pull_pos", qpos)
+	RenderingServer.global_shader_parameter_set("pull_amt", pull_cur)
+	RenderingServer.global_shader_parameter_set("pull_r", 0.03)
+
 func _update_tool_model() -> void:
 	if not pressing or selected == "":
 		tool_model.visible = false
@@ -377,7 +433,7 @@ func _update_tool_model() -> void:
 		pos = hit[0] + hit[1] * 0.006
 	if active and active.mech() == Defs.Mech.PULL:
 		pos = pos.lerp(active.grip_point(), 0.6)
-	tool_model.global_position = pos
+	tool_model.global_position = pos - Vector3(0, press_cur * 0.8, 0)
 	var cb := cam.global_basis
 	var y := (Vector3.UP * 0.75 + cb.z * 0.35 + cb.x * 0.35).normalized()
 	var x := (cb.x - y * cb.x.dot(y)).normalized()
@@ -475,19 +531,24 @@ func _skin_touch(pos: Vector2) -> void:
 	last_skin_hurt = now
 	mistakes += 1
 	_hurt(10.0, Defs.OUCH)
-	_toast("Cuidado! Você machucou a pele!", UIKit.RED, 34, 1.0)
-	_make_wound(hit[0], hit[1])
+	_toast("Cuidado! Você cortou a pele!", UIKit.RED, 34, 1.0)
+	var w := _make_wound(hit[0], hit[1])
+	if w:
+		skin_cut = w
+		w.wound_stroke(hit[0], true)
+		Sfx.play("cut")
 
-func _make_wound(pos: Vector3, normal: Vector3) -> void:
+func _make_wound(pos: Vector3, normal: Vector3) -> Problem:
 	if wounds >= MAX_WOUNDS:
-		return
+		return null
 	for q in problems:
 		if not q.done and q.center().distance_to(pos) < q.size + 0.05:
-			return
+			return null
 	wounds += 1
 	var p := _spawn("machucado", {"pos": pos, "normal": normal}, rng)
 	_update_labels()
 	p.show_guide(false)
+	return p
 
 func _start_on(p: Problem, pos: Vector2) -> void:
 	active = p
@@ -503,7 +564,11 @@ func _start_on(p: Problem, pos: Vector2) -> void:
 		Defs.Mech.SWEEP:
 			p.sweep(pos, _sweep_r(), cam)
 		Defs.Mech.CUT:
-			_cut_start(p, pos)
+			stroke_first = true
+			if p.has_paint_cut():
+				_paint_cut(p, pos)
+			else:
+				_cut_start(p, pos)
 		Defs.Mech.PULL:
 			var hit := _ray_body(pos)
 			p.pull_dir = Vector3(cam.global_basis.x.x, 0, cam.global_basis.x.z).normalized()
@@ -511,6 +576,33 @@ func _start_on(p: Problem, pos: Vector2) -> void:
 				pass
 		Defs.Mech.RUB:
 			_do_rub(p, pos, 0.0)
+
+## Corte de verdade: a lâmina risca a pele exatamente onde o dedo passa
+func _paint_cut(p: Problem, pos: Vector2) -> void:
+	var hit := _ray_body(pos)
+	var dh := p.ray_cut_host(cam.project_ray_origin(pos), cam.project_ray_normal(pos))
+	var wpos: Vector3
+	if not dh.is_empty():
+		wpos = dh[0]
+	elif hit.is_empty():
+		var o := cam.project_ray_origin(pos)
+		var d := cam.project_ray_normal(pos)
+		wpos = o + d * ((p.center().y - o.y) / d.y)
+	else:
+		wpos = hit[0]
+	var md := p.cut_stroke(wpos, stroke_first)
+	stroke_first = false
+	Sfx.play_throttled("cut", 0.09, 0.25, -6)
+	GameData.vibrate(8)
+	if md > p.size * 1.0 and now - last_cut_hurt > 0.7:
+		last_cut_hurt = now
+		mistakes += 1
+		_hurt(8.0, ["Fora da linha!!", "AAAI, aí não!"])
+		if hit.size() > 0 and md > p.size * 1.3:
+			var w := _make_wound(hit[0], hit[1])
+			if w:
+				skin_cut = w
+				w.wound_stroke(hit[0], true)
 
 func _cut_start(p: Problem, pos: Vector2) -> void:
 	var path := p.cut_path
@@ -565,6 +657,10 @@ func _do_rub(p: Problem, pos: Vector2, px: float) -> void:
 		p.rub_nail(wpos, BRUSH.get(selected, 0.04) * 0.6)
 	else:
 		p.rub(wpos, px, BRUSH.get(selected, 0.04))
+	if selected in ["pano", "algodao"]:
+		body.clean_stains(wpos, BRUSH.get(selected, 0.04))
+		if px > 0.0:
+			tool_model.soil(p.soil_color(), px * 0.0006)
 	_dirty_pain(p, 0.02)
 
 func _drag(pos: Vector2) -> void:
@@ -574,6 +670,12 @@ func _drag(pos: Vector2) -> void:
 		var p := _pick_problem(pos)
 		if p and p.tool() == selected and p.mech() in [Defs.Mech.RUB, Defs.Mech.SWEEP]:
 			_start_on(p, pos)
+	if skin_cut and is_instance_valid(skin_cut) and pressing:
+		var hit := _ray_body(pos)
+		if not hit.is_empty() and hit[0].distance_to(skin_cut.center()) < skin_cut.size * 2.0:
+			skin_cut.wound_stroke(hit[0], false)
+			pain = minf(100.0, pain + rel * 0.04)
+			Sfx.play_throttled("cut", 0.1, 0.3, -6)
 	var a := active
 	if a == null:
 		return
@@ -583,7 +685,10 @@ func _drag(pos: Vector2) -> void:
 				_rub_fx(a)
 				_do_rub(a, pos, rel)
 		Defs.Mech.CUT:
-			_cut_drag(a, pos, 1.0 / 60.0)
+			if a.has_paint_cut():
+				_paint_cut(a, pos)
+			else:
+				_cut_drag(a, pos, 1.0 / 60.0)
 		Defs.Mech.PULL:
 			frame_pull += rel
 		Defs.Mech.SWEEP:
@@ -592,7 +697,10 @@ func _drag(pos: Vector2) -> void:
 
 func _release() -> void:
 	pressing = false
+	if active:
+		active.end_stroke()
 	active = null
+	skin_cut = null
 	_update_labels()
 
 func _sweep_r() -> float:
@@ -639,7 +747,15 @@ func _wrong(p: Problem, pos: Vector2) -> void:
 		var wp := p.center() + dirv * (p.size + 0.06)
 		var sp := body.surface(wp.x, wp.z)
 		if not sp.is_empty():
-			_make_wound(sp[0], sp[1])
+			var w := _make_wound(sp[0], sp[1])
+			if w:
+				# um risco curto onde a ferramenta escorregou
+				var side := dirv.cross(Vector3.UP)
+				for k in 6:
+					var q: Vector3 = sp[0] + side * (k - 2.5) * 0.008
+					var s2 := body.surface(q.x, q.z)
+					if not s2.is_empty():
+						w.wound_stroke(s2[0], k == 0)
 	MeshGen.burst(body, p.center(), Problem.BLOOD_C if sharp else Color(1, 0.5, 0.5), 6, 0.6, 0.008, Vector3.UP, 50.0)
 	if level <= 3:
 		hint_until = maxf(hint_until, now + 4.0)
@@ -708,7 +824,7 @@ func _fail() -> void:
 	var m := UIKit.modal(hud_root)
 	var dim: Control = m[0]
 	var vb: VBoxContainer = m[1]
-	vb.add_child(UIKit.label("O PACIENTE FOI EMBORA CHORANDO!", 40, UIKit.RED))
+	vb.add_child(UIKit.label("O PACIENTE FOI\nEMBORA CHORANDO!", 40, UIKit.RED))
 	var f := PatientFace.new()
 	f.custom_minimum_size = Vector2(150, 150)
 	f.skin = data["look"]["skin"]
@@ -718,9 +834,14 @@ func _fail() -> void:
 	var fc := CenterContainer.new()
 	fc.add_child(f)
 	vb.add_child(fc)
-	vb.add_child(UIKit.label("Ferramenta errada e pressa machucam. Limpe antes e vá com calma!", 22, UIKit.DARK, 0))
-	var h := UIKit.hbox(16)
-	vb.add_child(h)
+	var tip := UIKit.label("Ferramenta errada e pressa machucam.\nLimpe antes e vá com calma!", 22, UIKit.DARK, 0)
+	vb.add_child(tip)
+	var h := VBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	var hc := CenterContainer.new()
+	hc.add_child(h)
+	vb.add_child(hc)
 	var cont := UIKit.btn("Acalmar e continuar (AD)", UIKit.GREEN, 24, Vector2(340, 76))
 	cont.pressed.connect(func(): Ads.show_rewarded(func():
 		dim.queue_free()
@@ -731,10 +852,10 @@ func _fail() -> void:
 		face.hurt_flash = 0.0
 		_say("Tá bom... mas com cuidado!")))
 	h.add_child(cont)
-	var retry := UIKit.btn("Tentar de novo", UIKit.BLUE, 24, Vector2(230, 76))
+	var retry := UIKit.btn("Tentar de novo", UIKit.BLUE, 24, Vector2(340, 76))
 	retry.pressed.connect(func(): get_tree().reload_current_scene())
 	h.add_child(retry)
-	var menu := UIKit.btn("Menu", UIKit.PURPLE, 24, Vector2(150, 76))
+	var menu := UIKit.btn("Menu", UIKit.PURPLE, 24, Vector2(340, 76))
 	menu.pressed.connect(_to_menu)
 	h.add_child(menu)
 
@@ -749,6 +870,7 @@ func _finish() -> void:
 	Sfx.play("success")
 	_toast("PACIENTE CURADO!", UIKit.GREEN, 60, 1.4)
 	await get_tree().create_timer(1.0).timeout
+	body.fade_stains()
 	_go_wide()
 	await get_tree().create_timer(1.2).timeout
 	hud.visible = false
@@ -783,7 +905,7 @@ func _show_result(after: Image, stars: int, reward: int) -> void:
 		frame.add_theme_stylebox_override("panel", UIKit.style(pair[2], 18, 0))
 		col.add_child(frame)
 		var tr := TextureRect.new()
-		tr.custom_minimum_size = Vector2(400, 225)
+		tr.custom_minimum_size = Vector2(290, 300)
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		if pair[0] != null:
@@ -795,15 +917,23 @@ func _show_result(after: Image, stars: int, reward: int) -> void:
 	var sc := CenterContainer.new()
 	sc.add_child(st)
 	vb.add_child(sc)
-	vb.add_child(UIKit.label("\"%s\" - %s" % [Defs.THANKS.pick_random(), data["look"]["name"]], 24, UIKit.DARK, 0))
+	var quote := UIKit.label("\"%s\" - %s" % [Defs.THANKS.pick_random(), data["look"]["name"]], 24, UIKit.DARK, 0)
+	quote.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	quote.custom_minimum_size.x = 560
+	vb.add_child(quote)
 	var coins_row := UIKit.hbox(8)
 	var ic := UIKit.CoinIcon.new()
 	ic.custom_minimum_size = Vector2(46, 46)
 	coins_row.add_child(ic)
 	var coin_lbl := UIKit.label("+%d" % reward, 44, Color("ffc43d"))
 	coins_row.add_child(coin_lbl)
-	coins_row.add_child(UIKit.label("   dor máxima: %d%%" % int(max_pain), 22, UIKit.RED if max_pain > 40 else UIKit.GREEN.darkened(0.3), 0))
 	vb.add_child(coins_row)
+	vb.add_child(UIKit.label("dor máxima: %d%%" % int(max_pain), 22, UIKit.RED if max_pain > 40 else UIKit.GREEN.darkened(0.3), 0))
+	var nxt := UIKit.btn("Próximo paciente", UIKit.GREEN, 30, Vector2(460, 84))
+	nxt.pressed.connect(_next)
+	var nc := CenterContainer.new()
+	nc.add_child(nxt)
+	vb.add_child(nc)
 	var btns := UIKit.hbox(16)
 	vb.add_child(btns)
 	var dbl := UIKit.btn("x2 Moedas (AD)", UIKit.YELLOW, 26, Vector2(250, 76))
@@ -816,9 +946,7 @@ func _show_result(after: Image, stars: int, reward: int) -> void:
 	var menu := UIKit.btn("Menu", UIKit.PURPLE, 26, Vector2(160, 76))
 	menu.pressed.connect(_to_menu)
 	btns.add_child(menu)
-	var nxt := UIKit.btn("Próximo paciente", UIKit.GREEN, 28, Vector2(300, 76))
-	nxt.pressed.connect(_next)
-	btns.add_child(nxt)
+
 	for i in stars:
 		await get_tree().create_timer(0.35).timeout
 		st.filled = i + 1
@@ -873,7 +1001,7 @@ func _build_hud() -> void:
 	bubble = UIKit.label("", 22, UIKit.DARK, 0)
 	var bp := PanelContainer.new()
 	bp.add_theme_stylebox_override("panel", UIKit.style(Color.WHITE, 18, 3, UIKit.DARK))
-	bp.position = Vector2(160, 30)
+	bp.position = Vector2(12, 196)
 	bp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bp.add_child(bubble)
 	bp.visible = false
@@ -895,16 +1023,16 @@ func _build_hud() -> void:
 	coins.anchor_left = 1.0
 	coins.anchor_right = 1.0
 	coins.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	coins.offset_left = -220
-	coins.offset_right = -16
-	coins.offset_top = 16
+	coins.offset_left = -190
+	coins.offset_right = -12
+	coins.offset_top = 14
 
 	var top := VBoxContainer.new()
 	top.anchor_left = 0.5
 	top.anchor_right = 0.5
 	top.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	top.offset_left = -300
-	top.offset_right = 300
+	top.offset_left = -205
+	top.offset_right = 150
 	top.offset_top = 10
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top.add_theme_constant_override("separation", 4)
@@ -912,17 +1040,21 @@ func _build_hud() -> void:
 	var head := "Fase %d  -  %s  (%s)" % [level, data["look"]["name"], Defs.PART_NAMES[data["part"]]]
 	if data["extreme"]:
 		head = "EXTREMO! " + head
-	top.add_child(UIKit.label(head, 26, UIKit.RED.lightened(0.5) if data["extreme"] else Color.WHITE, 7))
+	var hl := UIKit.label(head, 21, UIKit.RED.lightened(0.5) if data["extreme"] else Color.WHITE, 6)
+	hl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	top.add_child(hl)
 	progress_bar = ProgressBar.new()
-	progress_bar.custom_minimum_size = Vector2(460, 22)
+	progress_bar.custom_minimum_size = Vector2(340, 20)
 	progress_bar.show_percentage = false
 	progress_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	progress_bar.add_theme_stylebox_override("background", UIKit.style(Color(0.15, 0.1, 0.25, 0.6), 11))
 	progress_bar.add_theme_stylebox_override("fill", UIKit.style(UIKit.BLUE, 11))
 	top.add_child(progress_bar)
-	lbl_problem = UIKit.label("", 28, Color("fff3b0"), 7)
+	lbl_problem = UIKit.label("", 24, Color("fff3b0"), 7)
+	lbl_problem.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	top.add_child(lbl_problem)
-	lbl_hint = UIKit.label("", 22, Color.WHITE, 6)
+	lbl_hint = UIKit.label("", 19, Color.WHITE, 6)
+	lbl_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	top.add_child(lbl_hint)
 
 	var side := VBoxContainer.new()
@@ -970,7 +1102,10 @@ func _build_hud() -> void:
 	bar_panel.offset_bottom = -8
 	bar_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	hud_root.add_child(bar_panel)
-	tool_bar = UIKit.hbox(6)
+	tool_bar = GridContainer.new()
+	tool_bar.columns = 7
+	tool_bar.add_theme_constant_override("h_separation", 4)
+	tool_bar.add_theme_constant_override("v_separation", 4)
 	bar_panel.add_child(tool_bar)
 	_rebuild_tools()
 
@@ -982,7 +1117,7 @@ func _rebuild_tools() -> void:
 		if not GameData.has_tool(id):
 			continue
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(86, 100)
+		b.custom_minimum_size = Vector2(92, 98)
 		b.focus_mode = Control.FOCUS_NONE
 		_style_tool(b, false)
 		var ic := ToolIcon.new()
@@ -1011,6 +1146,8 @@ func _style_tool(b: Button, sel: bool) -> void:
 	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 
 func _select_tool(id: String) -> void:
+	if not tool_buttons.has(id):
+		return
 	if selected != "" and tool_buttons.has(selected):
 		_style_tool(tool_buttons[selected], false)
 	selected = id

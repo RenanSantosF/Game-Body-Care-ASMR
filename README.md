@@ -4,7 +4,7 @@ Jogo mobile 3D (Godot 4.3) de clínica **nojenta e satisfatória**: pacientes ch
 com a mão ou o pé cheios de problemas, você escolhe a ferramenta certa, trata com
 cuidado e vê o **antes e depois**.
 
-- Mão e pé **suaves e orgânicos** (malha gerada por SDF, sem cara de bloco), deitados num travesseiro, câmera de cima
+- **Tela vertical (retrato)**. Mão e pé **suaves e orgânicos** (malha gerada por SDF), deitados num travesseiro, câmera de cima
 - Lesões desenhadas por shader: pus brilhante, sangue, sujeira, crostas, calos, ferida com buracos, larvas, vermes, unhas
 - Limpeza "de verdade": o pano/algodão apaga só onde você esfrega
 - Animações de furar, espremer (o pus sai em fio), cortar seguindo a linha, raspar, lixar, puxar, cortar unha
@@ -12,6 +12,20 @@ cuidado e vê o **antes e depois**.
   O rostinho reage, chora e reclama. Dor em 100% = o paciente vai embora (perde a fase)
 - Moedas, loja, desbloqueio e melhoria de ferramentas, bônus diário, casos extremos
 - Anúncios recompensados e intersticiais (modo simulado pronto; AdMob plugável)
+
+## Realismo (como foi feito)
+
+| Técnica | Onde | Efeito |
+|---|---|---|
+| Luz de pele com espalhamento subsuperficial (wrap + terminador avermelhado) e 2 lóbulos especulares | `shaders/lighting.gdshaderinc` | pele que "brilha por dentro", oleosidade |
+| Microrrelevo procedural (poros, rugas finas, veias, manchas) convertido em normal | `shaders/skin.gdshader` | pele com textura de verdade sem imagens |
+| Campo de altura por lesão → normal por diferenças finitas | `shaders/lesion.gdshader` | crateras afundadas, bordas inchadas, crosta em relevo |
+| Pele deformável (uniforms globais) | `shaders/deform.gdshaderinc` | afunda sob o espremedor/pano, a pinça "puxa" a pele |
+| Mapa de corte pintado ao vivo (`FxMap`) | `scripts/fxmap.gd` | o corte aparece exatamente onde a lâmina passa, abre com o tempo, sangue brota ao longo da linha e escorre |
+| Inchaço com perfil suave (sem quina) e pele translúcida | `MeshGen.bump()` + `shaders/dome.gdshader` | espinhas/furúnculos que nascem da pele, murcham com rugas ao espremer |
+| Gotas físicas | `Body.spawn_drops` | pus/sangue voam, caem e mancham a pele onde pousam (limpáveis) |
+| Limpeza por máscara + brilho molhado que seca | `CleanMask` + uniform `wet` | o pano limpa só onde passa e deixa a pele molhada |
+| Pano com trama e algodão com fibras que se sujam | `shaders/fabric.gdshader` | a ferramenta pega a cor do que limpou |
 
 ## Como abrir
 

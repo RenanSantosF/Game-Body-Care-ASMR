@@ -2,6 +2,7 @@ shader_type spatial;
 render_mode depth_draw_always;
 // Unha: lúnula, borda livre, sujeira, micose, corte
 #include "res://shaders/noise.gdshaderinc"
+#include "res://shaders/deform.gdshaderinc"
 
 uniform vec3 pink : source_color = vec3(0.96, 0.66, 0.68);
 uniform float dirt = 0.0;
@@ -11,6 +12,13 @@ uniform float keep_from = -1.0;
 uniform float use_mask = 0.0;
 uniform sampler2D mask : filter_linear, repeat_disable;
 uniform float seed = 0.0;
+uniform float sss_amount = 0.4;
+uniform vec3 sss_color : source_color = vec3(1.0, 0.5, 0.5);
+
+void vertex() {
+	vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	VERTEX += inverse(mat3(MODEL_MATRIX)) * skin_deform(w);
+}
 
 void fragment() {
 	float u = UV.x;
@@ -38,6 +46,7 @@ void fragment() {
 	col = mix(col, mix(vec3(0.8, 0.62, 0.22), vec3(0.62, 0.48, 0.2), fn), f * smoothstep(0.2, 0.55, fn + 0.2));
 	float stripe = (1.0 - smoothstep(0.05, 0.25, abs(u + 0.35))) * 0.25;
 	ALBEDO = col + stripe * (1.0 - f);
-	ROUGHNESS = mix(0.18, 0.75, max(f, d * 0.6));
-	SPECULAR = 0.7;
+	ROUGHNESS = mix(0.12, 0.75, max(f, d * 0.6));
 }
+
+#include "res://shaders/lighting.gdshaderinc"

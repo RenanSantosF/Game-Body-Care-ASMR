@@ -1,11 +1,19 @@
 shader_type spatial;
 // Tubos: verme, larva, pus, fluido
 #include "res://shaders/noise.gdshaderinc"
+#include "res://shaders/deform.gdshaderinc"
 
 uniform int kind = 0;
 uniform float segs = 14.0;
 uniform float frozen = 0.0;
 uniform vec3 tint : source_color = vec3(1.0);
+uniform float sss_amount = 0.8;
+uniform vec3 sss_color : source_color = vec3(1.0, 0.6, 0.3);
+
+void vertex() {
+	vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	VERTEX += inverse(mat3(MODEL_MATRIX)) * skin_deform(w);
+}
 
 void fragment() {
 	float rib = 0.5 + 0.5 * cos(UV.y * segs * 6.2831);
@@ -38,6 +46,7 @@ void fragment() {
 	}
 	col = mix(col, vec3(0.82, 0.93, 1.0), frozen * 0.8);
 	ALBEDO = col;
-	ROUGHNESS = mix(0.85, 0.1, gloss);
-	SPECULAR = 0.6;
+	ROUGHNESS = mix(0.85, 0.06, gloss);
 }
+
+#include "res://shaders/lighting.gdshaderinc"

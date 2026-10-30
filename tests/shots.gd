@@ -8,13 +8,39 @@ func _ready() -> void:
 	GameData.sound_on = false
 	var runner = load("res://tests/test_runner.gd").new()
 	add_child(runner)
-	var lvl := int(OS.get_environment("LVL"))
+	var lvl := int(OS.get_environment("LVL")) if OS.get_environment("LVL") != "" else 12
+	if OS.get_environment("LAB") != "":
+		GameData.set_meta("lab_problems", Array(OS.get_environment("LAB").split(",")))
+		GameData.set_meta("lab_part", OS.get_environment("PART") if OS.get_environment("PART") != "" else "mao")
 	GameData.current_level = lvl
 	var game = load("res://scenes/game.tscn").instantiate()
 	add_child(game)
 	await _wait(0.5)
 	await _shot("L%d_00_wide" % lvl)
 	await _wait(3.0)
+	if OS.get_environment("CUTSKIN") != "":
+		# corte errado na pele saudável, depois espera sangrar
+		game._go_wide()
+		await _wait(0.8)
+		var c0: Vector3 = game.body.cam_center + Vector3(-0.25, 0, 0.15)
+		var s0 = game.body.surface(c0.x, c0.z)
+		game._focus_on(game.problems[0])
+		await _wait(0.9)
+		game.cam_look = s0[0]
+		game.cam_pos = s0[0] + Vector3(-0.35, 0.85, 0)
+		await _wait(0.3)
+		game._select_tool("bisturi")
+		var a: Vector2 = game.cam.unproject_position(s0[0])
+		game._press(a)
+		for f in 30:
+			game._drag(a + Vector2(f * 4.0, sin(f * 0.3) * 6.0 - f * 1.5))
+			await get_tree().process_frame
+		game._release()
+		await _shot("L%d_80_corte_pele_0s" % lvl)
+		await _wait(2.0)
+		await _shot("L%d_81_corte_pele_2s" % lvl)
+		await _wait(3.0)
+		await _shot("L%d_82_corte_pele_5s" % lvl)
 	var i := 0
 	var only := OS.get_environment("ONLY")
 	for p in game.problems.duplicate():
@@ -67,7 +93,12 @@ func _partial(game, p: Problem) -> void:
 			var path: PackedVector3Array = p.cut_path
 			game._press(game.cam.unproject_position(path[0]))
 			for j in range(1, path.size() / 2 + 1):
-				game._drag(game.cam.unproject_position(path[j]))
+				var a2: Vector2 = game.cam.unproject_position(path[j - 1])
+				var b2: Vector2 = game.cam.unproject_position(path[j])
+				for k in 5:
+					game._drag(a2.lerp(b2, (k + 1) / 5.0))
+					await get_tree().process_frame
+			for f in 40:
 				await get_tree().process_frame
 		_:
 			await get_tree().process_frame

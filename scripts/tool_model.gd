@@ -31,6 +31,7 @@ func set_tool(id: String) -> void:
 	root = Node3D.new()
 	add_child(root)
 	parts.clear()
+	_soil.clear()
 	spray_fx = null
 	var metal := _metal()
 	match id:
@@ -38,20 +39,24 @@ func set_tool(id: String) -> void:
 			var cloth := Node3D.new()
 			root.add_child(cloth)
 			parts["cloth"] = cloth
-			var c := _plastic(Color("7cc8ff"))
-			_sph(cloth, Vector3(0.09, 0.025, 0.07), MeshGen.std(Color("7cc8ff"), 0.95), Vector3(0, 0.02, 0))
-			_sph(cloth, Vector3(0.075, 0.03, 0.06), MeshGen.std(Color("9bd6ff"), 0.95), Vector3(0.01, 0.05, 0.005))
-			_sph(cloth, Vector3(0.05, 0.035, 0.045), MeshGen.std(Color("b5e2ff"), 0.95), Vector3(-0.005, 0.08, 0))
-			c = c
+			var fm := MeshGen.shader_mat("res://shaders/fabric.gdshader")
+			fm.set_shader_parameter("kind", 0)
+			fm.set_shader_parameter("base", Color("8cc9ef"))
+			MeshGen.inst(cloth, _cloth_mesh(), fm)
+			parts["mat"] = fm
 		"algodao":
 			var ball := Node3D.new()
 			root.add_child(ball)
 			parts["ball"] = ball
-			var w := MeshGen.std(Color(0.98, 0.98, 0.96), 1.0)
-			_sph(ball, Vector3(0.045, 0.035, 0.045), w, Vector3(0, 0.03, 0))
-			_sph(ball, Vector3(0.035, 0.03, 0.035), w, Vector3(0.025, 0.045, 0.01))
-			_sph(ball, Vector3(0.03, 0.03, 0.032), w, Vector3(-0.02, 0.05, -0.01))
-			_cyl(root, 0.006, 0.35, metal, Vector3(0, 0.25, 0))
+			var cm := MeshGen.shader_mat("res://shaders/fabric.gdshader")
+			cm.set_shader_parameter("kind", 1)
+			parts["mat"] = cm
+			_sph(ball, Vector3(0.045, 0.032, 0.045), cm, Vector3(0, 0.028, 0))
+			_sph(ball, Vector3(0.034, 0.03, 0.036), cm, Vector3(0.024, 0.045, 0.01))
+			# pinça segurando o algodão
+			for side in [-1.0, 1.0]:
+				var arm := MeshGen.inst(root, MeshGen.cylinder(1.0, 1.0, 0.5), metal, Vector3(side * 0.012, 0.22, 0), Vector3(0.008, 0.34, 0.004))
+				arm.rotation.z = side * 0.06
 		"agulha":
 			var nd := Node3D.new()
 			root.add_child(nd)
@@ -165,6 +170,55 @@ func set_tool(id: String) -> void:
 			spray_fx.scale_amount_max = 2.0
 			spray_fx.emitting = false
 	set_active(false)
+
+var _soil := {}
+
+## Pano e algodão ficam sujos com o que limpam
+func soil(c: Color, amt: float) -> void:
+	if tool_id != "pano" and tool_id != "algodao":
+		return
+	if not parts.has("mat"):
+		return
+	var m: ShaderMaterial = parts["mat"]
+	var cur: float = _soil.get("amt", 0.0)
+	var cc: Color = _soil.get("col", c)
+	cur = minf(1.0, cur + clampf(amt, 0.0, 0.05))
+	cc = cc.lerp(c, 0.08)
+	_soil["amt"] = cur
+	_soil["col"] = cc
+	m.set_shader_parameter("soil", cur)
+	m.set_shader_parameter("soil_col", cc)
+
+## Pano dobrado: tecido com pregas, apertado embaixo e solto em cima
+func _cloth_mesh() -> ArrayMesh:
+	var res := 16
+	var verts := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var idx := PackedInt32Array()
+	for j in res + 1:
+		for i in res + 1:
+			var u := float(i) / res
+			var v := float(j) / res
+			var x := (u - 0.5) * 0.17
+			var z := (v - 0.5) * 0.13
+			var r := Vector2(x / 0.085, z / 0.065).length()
+			# centro encostado na pele, bordas sobem (dedos segurando) com pregas
+			var y := pow(r, 2.2) * 0.07 + sin(u * 19.0 + v * 3.0) * 0.006 * r + sin(v * 13.0) * 0.004 * r
+			verts.append(Vector3(x, y + 0.004, z))
+			uvs.append(Vector2(u, v))
+	for j in res:
+		for i in res:
+			var a := j * (res + 1) + i
+			idx.append_array([a, a + 1, a + res + 1, a + 1, a + res + 2, a + res + 1])
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_TEX_UV] = uvs
+	arr[Mesh.ARRAY_INDEX] = idx
+	var st := SurfaceTool.new()
+	st.create_from_arrays(arr)
+	st.generate_normals()
+	return st.commit()
 
 func set_active(a: bool, m := -1) -> void:
 	active = a
