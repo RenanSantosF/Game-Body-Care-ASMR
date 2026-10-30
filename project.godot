@@ -1,0 +1,42 @@
+; Engine configuration file.
+; Gross to Glow - Godot 4.3
+
+config_version=5
+
+[application]
+
+config/name="Gross to Glow"
+config/description="Clínica nojenta e satisfatória: trate pacientes e veja o antes e depois!"
+run/main_scene="res://scenes/main_menu.tscn"
+config/features=PackedStringArray("4.3", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+GameData="*res://autoload/game_data.gd"
+Sfx="*res://autoload/sfx.gd"
+Ads="*res://autoload/ad_manager.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=4
+
+[input_devices]
+
+pointing/emulate_mouse_from_touch=true
+
+[physics]
+
+common/physics_ticks_per_second=30
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
+anti_aliasing/quality/msaa_3d=1
+environment/defaults/default_clear_color=Color(0.53, 0.86, 0.85, 1)
