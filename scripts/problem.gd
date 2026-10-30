@@ -314,7 +314,8 @@ func _heal_lesion(key: String, to: float, dur := 0.8) -> void:
 	if not n.has(key) or not is_instance_valid(n[key]):
 		return
 	var m: ShaderMaterial = n[key].material_override
-	var from: float = m.get_shader_parameter("heal")
+	var hv = m.get_shader_parameter("heal")
+	var from: float = hv if hv != null else 0.0
 	var tw := create_tween()
 	tw.tween_method(func(v): m.set_shader_parameter("heal", v), from, to, dur)
 
@@ -739,10 +740,13 @@ func _build_larvas() -> void:
 		nd.global_position = sp[0] + sp[1] * 0.006
 		nd.global_basis = MeshGen.basis_from_normal(sp[1]).rotated(sp[1], rng.randf() * TAU)
 		var pts := PackedVector3Array()
-		for k in 6:
-			pts.append(Vector3(0, 0.002 * sin(k), -0.025 + k * 0.01))
-		var r := rng.randf_range(0.8, 1.2)
-		var mi := MeshGen.inst(nd, MeshGen.tube(pts, _taper(6, 0.007 * r, 0.004 * r), 8), tube_mat(T_LARVA))
+		for k in 7:
+			pts.append(Vector3(0, 0.003 * sin(k * 0.8), -0.022 + k * 0.0075))
+		var r := rng.randf_range(0.85, 1.25)
+		var rad := PackedFloat32Array()
+		for k in 7:
+			rad.append((0.006 + 0.005 * sin(PI * (k + 0.6) / 7.6)) * r)
+		var mi := MeshGen.inst(nd, MeshGen.tube(pts, rad, 10), tube_mat(T_LARVA))
 		mi.set_meta("ph", rng.randf() * TAU)
 		items.append({"node": nd, "pos": sp[0], "alive": true, "mi": mi})
 	items_left = items.size()
@@ -830,7 +834,7 @@ func _update_worm() -> void:
 	if stage == 1:
 		# verme saindo pelo corte
 		var mouth := path[path.size() / 2]
-		var tip := mouth + Vector3(0, 0.04 + progress * 0.25, 0) + pull_dir * progress * 0.12
+		var tip := mouth + Vector3(0, 0.07 + progress * 0.25, 0) + pull_dir * (0.03 + progress * 0.14)
 		var pts2 := PackedVector3Array()
 		var cnt2 := 14
 		for i in cnt2:
@@ -839,7 +843,7 @@ func _update_worm() -> void:
 			p += Vector3(sin(k * 9.0 + t * 7.0), 0, cos(k * 7.0 + t * 6.0)) * 0.012 * k
 			p.y += sin(k * PI) * 0.02
 			pts2.append(p)
-		(n["worm_mi"] as MeshInstance3D).mesh = MeshGen.tube(pts2, _taper(cnt2, 0.011, 0.008), 10)
+		(n["worm_mi"] as MeshInstance3D).mesh = MeshGen.tube(pts2, _taper(cnt2, 0.017, 0.012), 10)
 		n["grip"].global_position = tip
 
 # =================================================================== progresso de cada etapa

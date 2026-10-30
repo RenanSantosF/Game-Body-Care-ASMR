@@ -236,7 +236,7 @@ func _focus_on(p: Problem) -> void:
 	focus = p
 	wide = false
 	var target := p.center()
-	var d := clampf(0.7 + p.focus_radius() * 4.0, 0.95, 1.9)
+	var d := clampf(0.55 + p.focus_radius() * 2.6, 0.75, 1.5)
 	# um pouco acima do centro da tela por causa da barra de ferramentas
 	var look := target + Vector3(0, 0, d * 0.08)
 	_move_cam(look + Vector3(0, d, d * 0.42), look)
@@ -314,6 +314,9 @@ func _update_pain() -> void:
 
 func _hurt(amount: float, lines: Array, min_gap := 0.0) -> void:
 	pain = minf(100.0, pain + amount)
+	if pain >= 100.0 and not finished:
+		_update_pain()
+		return
 	if min_gap <= 0.0 or now - last_slow > min_gap:
 		last_slow = now
 		face.hurt()
@@ -630,9 +633,13 @@ func _wrong(p: Problem, pos: Vector2) -> void:
 	_float_text("AI!", cam.unproject_position(p.center()) + Vector2(0, -50), UIKit.RED, 46)
 	_toast("Ferramenta errada! Piorou!", UIKit.RED, 40, 1.0)
 	# fica pior: inflama mais / sangra
-	var hit := _ray_body(pos)
-	if sharp and not hit.is_empty():
-		_make_wound(hit[0] + Vector3(randf_range(-0.03, 0.03), 0, randf_range(-0.03, 0.03)), hit[1])
+	if sharp:
+		# o corte errado abre um machucado ao lado do problema
+		var dirv := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
+		var wp := p.center() + dirv * (p.size + 0.06)
+		var sp := body.surface(wp.x, wp.z)
+		if not sp.is_empty():
+			_make_wound(sp[0], sp[1])
 	MeshGen.burst(body, p.center(), Problem.BLOOD_C if sharp else Color(1, 0.5, 0.5), 6, 0.6, 0.008, Vector3.UP, 50.0)
 	if level <= 3:
 		hint_until = maxf(hint_until, now + 4.0)

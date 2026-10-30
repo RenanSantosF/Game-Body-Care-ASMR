@@ -38,9 +38,11 @@ void fragment() {
 		alpha = 0.8;
 		gloss = 1.0;
 	} else if (kind == 2) {
-		col = mix(vec3(0.66, 0.14, 0.2), vec3(0.88, 0.32, 0.32), h);
-		col = mix(col, vec3(0.96, 0.84, 0.34), smoothstep(0.8, 0.93, h));
-		gloss = 0.75;
+		col = mix(mix(skin, red, 0.7), vec3(0.78, 0.2, 0.24), smoothstep(0.0, 0.6, h));
+		col = mix(col, vec3(0.92, 0.55, 0.3), smoothstep(0.72, 0.85, h));
+		col = mix(col, vec3(0.98, 0.88, 0.42), smoothstep(0.84, 0.95, h));
+		col = mix(col, vec3(1.0, 0.97, 0.8), smoothstep(0.96, 1.0, h) * 0.6);
+		gloss = 0.7;
 	} else if (kind == 3) {
 		col = mix(vec3(0.68, 0.58, 0.46), vec3(0.86, 0.78, 0.64), vnoise(lp.xz * 14.0 + seed));
 		col = mix(col, vec3(0.4, 0.3, 0.22), step(0.9, h21(floor(lp.xz * 18.0))) * 0.7);
