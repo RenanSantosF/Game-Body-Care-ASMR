@@ -129,3 +129,14 @@ Joga as fases sozinho e mostra erros no console:
 ```
 godot --headless --path . res://tests/test_runner.tscn
 ```
+
+## APK (GitHub Actions)
+
+O workflow `.github/workflows/android.yml` gera o APK a cada push:
+**Actions → Build Android APK → (execução) → Artifacts → GrossToGlow-apk**.
+Criando uma tag `v*` (ex.: `v0.3.0`) o APK também vai para a página de **Releases**.
+
+- Assinado com chave de debug (instalação direta no celular, "fontes desconhecidas").
+- Para manter a mesma assinatura entre builds (atualizar sem desinstalar), salve um keystore
+  em base64 no segredo `ANDROID_KEYSTORE_B64` (alias `androiddebugkey`, senha `android`).
+- Para a Play Store será preciso um keystore de release e AAB (Gradle build).
