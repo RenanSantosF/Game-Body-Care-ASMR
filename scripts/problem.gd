@@ -72,6 +72,7 @@ var fx_hosts: Array = []          # nós com FxMap (corte/sangue pintado ao vivo
 var cut_host: Node3D              # onde a lâmina corta neste problema
 var guide_uv := PackedVector2Array()
 var wet := 0.0
+var blood_peak := 0.0
 
 static var _tube_mats := {}
 
@@ -136,6 +137,24 @@ func rub(wpos: Vector3, px: float, brush_r: float) -> float:
 				fx.wipe(host_uv(h, wpos), brush_r / _host_half(h) * FxMap.SIZE * 0.5, 0.25 * speed)
 	var a := amount()
 	var target := _rub_target()
+	if id == "machucado" and tool() == "algodao" and cut_host:
+		var fx: FxMap = cut_host.get_meta("fx")
+		var b := fx.blood_total()
+		blood_peak = maxf(blood_peak, b)
+		var pr := 0.0
+		if blood_peak > 0.0015:
+			pr = clampf((1.0 - b / blood_peak) / 0.88, 0.0, 1.0)
+		else:
+			# quase sem sangue: ainda precisa esfregar um pouco
+			pr = clampf(progress + px / 350.0, 0.0, 1.0)
+		var g0 := maxf(0.0, pr - progress)
+		progress = maxf(progress, pr)
+		if progress >= 0.985:
+			progress = 1.0
+		_visual()
+		if progress >= 1.0:
+			_complete_stage()
+		return g0
 	if a <= 1.0 and target != null:
 		var cov := _paint(target, wpos, brush_r, 0.3 * speed)
 		# precisa limpar de verdade a área toda (cobertura ponderada >= 92%)
@@ -464,6 +483,8 @@ func _fly_off(nd: Node3D, extra := Vector3.ZERO) -> void:
 
 ## Curativo adesivo de verdade: fita perfurada + gaze, colado acompanhando a pele
 func _bandage(w: float, l: float, at := Vector3.INF, along := Vector3.INF) -> void:
+	if n.has("bandage"):
+		return
 	var c := global_position if at == Vector3.INF else at
 	var fwd := global_basis.z if along == Vector3.INF else along
 	fwd.y = 0.0
@@ -1252,6 +1273,16 @@ func _on_stage_start(s: int) -> void:
 				n["blood"] = _lesion(L_BLOOD, size * 0.95, Vector2.ZERO, true, 0.009)
 
 func _on_stage_end(s: int) -> void:
+	if def["stages"][s][0] == "curativo" and not n.has("bandage"):
+		if nail.is_empty():
+			_bandage(maxf(size * 2.4, 0.11), maxf(size * 1.5, 0.07))
+		else:
+			_nail_bandage()
+		_on_stage_end_rest(s)
+		return
+	_on_stage_end_rest(s)
+
+func _on_stage_end_rest(s: int) -> void:
 	# antisséptico estanca o sangramento
 	if def["stages"][s][0] == "algodao":
 		for h in fx_hosts:

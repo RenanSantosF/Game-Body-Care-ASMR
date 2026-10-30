@@ -18,6 +18,7 @@ var drips: Array = []        # [pos_px, dir_px, vida]
 var bleed := 0.0             # intensidade do sangramento
 var down := Vector2(0, 1)    # direção "morro abaixo" em pixels
 var _last := Vector2(-999, -999)
+var wiped := 0.0             # algodão pressionando estanca o sangue
 
 func _init() -> void:
 	img = Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
@@ -103,16 +104,17 @@ func wipe(uv: Vector2, r_px: float, amount: float) -> void:
 	var p := to_px(uv) - Vector2(px, px) * 0.5
 	wmask.blend_rect(b, Rect2i(0, 0, px, px), Vector2i(p))
 	wdirty = true
-	bleed *= 0.985
+	wiped = 1.0
+	bleed *= 0.95
 
 func blood_total() -> float:
 	var s := 0.0
-	for j in 12:
-		for i in 12:
-			var x := int((i + 0.5) / 12.0 * SIZE)
-			var y := int((j + 0.5) / 12.0 * SIZE)
+	for j in 32:
+		for i in 32:
+			var x := int((i + 0.5) / 32.0 * SIZE)
+			var y := int((j + 0.5) / 32.0 * SIZE)
 			s += img.get_pixel(x, y).g * (1.0 - wmask.get_pixel(x, y).r)
-	return s / 144.0
+	return s / 1024.0
 
 ## Sangue brota em gotinhas ao longo do corte e às vezes escorre
 func step(dt: float) -> void:
@@ -124,7 +126,8 @@ func step(dt: float) -> void:
 		if randf() < dt * 1.6 * bleed and drips.size() < 4:
 			var q2: Vector2 = cut_pts[randi() % cut_pts.size()]
 			drips.append([q2, (down + Vector2(randf_range(-0.4, 0.4), randf_range(-0.4, 0.4))).normalized(), randf_range(6.0, 16.0)])
-		bleed = maxf(0.15, bleed - dt * 0.03)
+		wiped = maxf(0.0, wiped - dt)
+		bleed = maxf(0.0 if wiped > 0.0 else 0.15, bleed - dt * (0.4 if wiped > 0.0 else 0.03))
 	for d in drips:
 		# escorre devagar, serpenteando, e termina numa gota
 		var nd: Vector2 = d[1] + Vector2(randf_range(-0.25, 0.25), randf_range(-0.25, 0.25))

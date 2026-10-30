@@ -72,6 +72,9 @@ var tool_pos := Vector3.ZERO
 var tool_vel := Vector3.ZERO
 var guide: GuideArrow
 var pending_focus := false
+var coach: TwoFingerCoach
+var aim_still := 0.0
+var coached := false
 
 var hud: CanvasLayer
 var hud_root: Control
@@ -236,7 +239,7 @@ func _begin() -> void:
 	_focus_on(_first_problem())
 	input_ok = true
 	if level <= 2:
-		_toast("1 dedo mira. Toque com OUTRO dedo para usar a ferramenta.", UIKit.YELLOW, 26, 3.2)
+		coach.intro()
 	_update_labels()
 
 func _first_problem() -> Problem:
@@ -315,7 +318,7 @@ func _focus_on(p: Problem) -> void:
 	var d := clampf(0.6 + p.focus_radius() * 2.6, 0.92, 1.6)
 	# um pouco acima do centro da tela por causa da barra de ferramentas
 	var look := target - CAM_UP * d * 0.12
-	look.y = 0.0
+	look.y = target.y
 	look.x = maxf(look.x, -2.2 + d * 0.62)
 	_move_cam(_cam_pos_for(look, d), look)
 	_update_labels()
@@ -332,6 +335,27 @@ func _next_problem(from: Vector3) -> Problem:
 		if not p.done and p.id == "sujeira":
 			return p
 	return _nearest(from)
+
+## Ensina os dois dedos: aparece quando o jogador mira mas não usa o 2º dedo
+func _update_coach(delta: float) -> void:
+	if coach == null:
+		return
+	coach.aim = _screen_from_work(last_pos) if pressing else Vector2(-1, -1)
+	coach.action = touches[trig_touch] if trig_touch >= 0 and touches.has(trig_touch) else Vector2(-1, -1)
+	if pressing and not triggering and active != null:
+		aim_still += delta
+	else:
+		aim_still = 0.0
+	var need := aim_still > (0.6 if not coached else 1.4)
+	if need and not coach.showing:
+		coach.show_hint(active.tool() if active else selected)
+	elif (triggering or not pressing) and coach.showing:
+		coach.hide_hint()
+		if triggering:
+			coached = true
+
+func _screen_from_work(p: Vector2) -> Vector2:
+	return p - TOOL_OFFSET if tool_touch >= 0 else p
 
 func _update_guide() -> void:
 	if guide == null:
@@ -404,6 +428,7 @@ func _process(delta: float) -> void:
 					a.pull(amt)
 	frame_pull = 0.0
 	_update_guide()
+	_update_coach(delta)
 	_update_tool_model()
 	_update_deform(delta)
 	_update_hint_glow()
@@ -540,7 +565,7 @@ func _update_tool_model() -> void:
 	var dist := cam.global_position.distance_to(pos)
 	tool_model.global_basis = Basis(x, y, z).scaled(Vector3.ONE * clampf(dist / 1.3, 0.6, 2.5))
 	tool_model.grip = triggering
-	tool_model.set_active(active != null, active.mech() if active else -1)
+	tool_model.set_active(active != null and triggering, active.mech() if active else -1)
 
 # =================================================================== entrada
 
@@ -1290,6 +1315,8 @@ func _build_hud() -> void:
 	guide = GuideArrow.new()
 	hud_root.add_child(guide)
 	hud_root.move_child(guide, 0)
+	coach = TwoFingerCoach.new()
+	hud_root.add_child(coach)
 
 	var bar_panel := PanelContainer.new()
 	var sb := UIKit.style(Color(1, 1, 1, 0.88), 24, 4, Color("d9cff0"))
@@ -1425,12 +1452,16 @@ func _say(text: String) -> void:
 	tw.tween_property(bp, "modulate:a", 0.0, 0.3)
 
 func _toast(text: String, color := Color.WHITE, size := 40, dur := 1.0) -> void:
-	var l := UIKit.label(text, size, color, 10)
-	l.set_anchors_preset(Control.PRESET_CENTER)
-	l.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	l.grow_vertical = Control.GROW_DIRECTION_BOTH
+	var l := UIKit.label(text, mini(size, 36), color, 10)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.anchor_left = 0.0
+	l.anchor_right = 1.0
+	l.anchor_top = 0.5
+	l.anchor_bottom = 0.5
+	l.offset_left = 30
+	l.offset_right = -30
 	l.offset_top = 110
-	l.offset_bottom = 180
+	l.offset_bottom = 230
 	hud_root.add_child(l)
 	await get_tree().process_frame
 	if not is_instance_valid(l):

@@ -39,6 +39,7 @@ func _arrow(tip: Vector2, dir: Vector2, s: float, col: Color) -> void:
 	draw_colored_polygon(head, col)
 
 func _draw() -> void:
+	var size := get_viewport_rect().size
 	var r := Rect2(Vector2(MARGIN, MARGIN + 150), size - Vector2(MARGIN * 2, MARGIN * 2 + 400)).abs()
 	if r.size.x < 10.0 or r.size.y < 10.0:
 		return
