@@ -8,7 +8,38 @@ var players: Array[AudioStreamPlayer] = []
 var _next := 0
 var _last := {}
 
+var music: AudioStreamPlayer
+var _track := ""
+
+## Música de fundo (composta em tools/compose.py)
+func play_music(track: String) -> void:
+	if track == _track:
+		return
+	_track = track
+	var st: AudioStream = load("res://assets/music/%s.ogg" % track)
+	if st is AudioStreamOggVorbis:
+		(st as AudioStreamOggVorbis).loop = true
+	var tw := create_tween()
+	if music.playing:
+		tw.tween_property(music, "volume_db", -40.0, 0.5)
+	tw.tween_callback(func():
+		music.stream = st
+		music.volume_db = -40.0
+		if GameData.music_on:
+			music.play())
+	tw.tween_property(music, "volume_db", -9.0, 0.8)
+
+func set_music_enabled(on: bool) -> void:
+	GameData.music_on = on
+	if on:
+		if music.stream:
+			music.play()
+	else:
+		music.stop()
+
 func _ready() -> void:
+	music = AudioStreamPlayer.new()
+	add_child(music)
 	for i in 8:
 		var p := AudioStreamPlayer.new()
 		add_child(p)

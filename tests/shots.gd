@@ -26,8 +26,8 @@ func _ready() -> void:
 		var s0 = game.body.surface(c0.x, c0.z)
 		game._focus_on(game.problems[0])
 		await _wait(0.9)
-		game.cam_look = s0[0]
-		game.cam_pos = s0[0] + Vector3(-0.35, 0.85, 0)
+		game.cam_look = Vector3(s0[0].x, 0, s0[0].z)
+		game.cam_dist = 0.9
 		await _wait(0.3)
 		game._select_tool("bisturi")
 		var a: Vector2 = game.cam.unproject_position(s0[0])
@@ -78,9 +78,11 @@ func _partial(game, p: Problem) -> void:
 	game._press(c)
 	match p.mech():
 		Defs.Mech.HOLD:
+			game._trigger(true)
 			for f in 20:
 				await get_tree().process_frame
 		Defs.Mech.PULL:
+			game._trigger(true)
 			for f in 25:
 				game._drag(c + Vector2(f * 2.5, -f * 1.5))
 				await get_tree().process_frame

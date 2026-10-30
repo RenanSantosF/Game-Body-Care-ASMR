@@ -52,8 +52,8 @@ void fragment() {
 	float mott = fbm(p * 3.0);
 	vec3 c = skin * (0.93 + mott * 0.12);
 	c = mix(c, c * vec3(1.04, 0.92, 0.9), smoothstep(0.55, 0.8, fbm(p * 6.0 + 3.0)) * 0.5);
-	float vein = 1.0 - smoothstep(0.0, 0.035, abs(fbm(p * vec2(1.3, 3.2) + vec2(4.0, 1.0)) - 0.5));
-	c = mix(c, c * vec3(0.82, 0.88, 1.08), vein * 0.22 * smoothstep(0.6, 0.95, vao));
+	float vein = 1.0 - smoothstep(0.0, 0.06, abs(fbm(p * vec2(0.8, 1.9) + vec2(4.0, 1.0)) - 0.5));
+	c = mix(c, c * vec3(0.88, 0.92, 1.05), vein * 0.1 * smoothstep(0.6, 0.95, vao));
 	c = mix(skin_deep, c, smoothstep(0.3, 0.95, vao));
 	c *= mix(0.55, 1.0, smoothstep(0.15, 0.9, vao));
 

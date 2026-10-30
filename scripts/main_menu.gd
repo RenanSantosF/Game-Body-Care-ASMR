@@ -50,9 +50,18 @@ func _ready() -> void:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(center)
 
-	center.add_child(UIKit.label("GROSS", 130, Color("9cff57"), 18, Color("2b5a10")))
-	center.add_child(UIKit.label("to", 60, Color.WHITE, 12))
-	center.add_child(UIKit.label("GLOW", 130, Color("ffe066"), 18, Color("8a4b00")))
+	var logo := TextureRect.new()
+	logo.texture = load("res://assets/ui/logo.png")
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.custom_minimum_size = Vector2(620, 520)
+	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.add_child(logo)
+	logo.pivot_offset = Vector2(310, 260)
+	var ltw := logo.create_tween().set_loops()
+	ltw.tween_property(logo, "scale", Vector2(1.03, 1.03), 1.2).set_trans(Tween.TRANS_SINE)
+	ltw.tween_property(logo, "scale", Vector2.ONE, 1.2).set_trans(Tween.TRANS_SINE)
+	Sfx.play_music("menu")
 	var tag := UIKit.label("Clínica de cuidados nojentos\ne satisfatórios", 28, Color.WHITE, 6)
 	center.add_child(tag)
 	var sub := UIKit.label("Pacientes atendidos: %d  |  Estrelas: %d" % [GameData.patients_treated, GameData.total_stars()], 22, Color(1, 1, 1, 0.9), 5)
@@ -285,9 +294,11 @@ func _settings() -> void:
 	overlay = m[0]
 	var vb: VBoxContainer = m[1]
 	vb.add_child(UIKit.label("OPÇÕES", 44, UIKit.PURPLE))
+	var mus := UIKit.btn("", UIKit.PINK, 28, Vector2(360, 76))
 	var snd := UIKit.btn("", UIKit.BLUE, 28, Vector2(360, 76))
 	var vib := UIKit.btn("", UIKit.BLUE, 28, Vector2(360, 76))
 	var refresh := func():
+		mus.text = "Música: " + ("LIGADA" if GameData.music_on else "DESLIGADA")
 		snd.text = "Som: " + ("LIGADO" if GameData.sound_on else "DESLIGADO")
 		vib.text = "Vibração: " + ("LIGADA" if GameData.vibrate_on else "DESLIGADA")
 	refresh.call()
@@ -299,6 +310,11 @@ func _settings() -> void:
 		GameData.vibrate_on = not GameData.vibrate_on
 		GameData.save_game()
 		refresh.call())
+	mus.pressed.connect(func():
+		Sfx.set_music_enabled(not GameData.music_on)
+		GameData.save_game()
+		refresh.call())
+	vb.add_child(mus)
 	vb.add_child(snd)
 	vb.add_child(vib)
 	var close := UIKit.btn("Fechar", UIKit.PURPLE, 28, Vector2(200, 70))

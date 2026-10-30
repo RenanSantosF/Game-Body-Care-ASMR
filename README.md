@@ -34,6 +34,20 @@ cuidado e vê o **antes e depois**.
 
 Renderizador: **Compatibility (OpenGL ES 3)**, sem sombras dinâmicas (sombra de contato pré-calculada) — leve no Android.
 
+## Controles
+
+| Gesto | Ação |
+|---|---|
+| 1 dedo com ferramenta | move a ferramenta (ela fica **acima e à esquerda** do dedo, para você ver) |
+| 2º dedo (com o 1º em cima do problema) | **aciona**: fecha a pinça, aperta o espremedor, fura, borrifa, cola o curativo |
+| 2 dedos (fora de um problema) | **pinça para zoom** e arrastar para mover a câmera |
+| 1 dedo sem ferramenta | move a câmera |
+| PC | botão esquerdo = ferramenta, **direito/Espaço = 2º dedo**, roda = zoom, botão do meio = mover |
+
+A **setinha amarela** mostra o próximo problema. Puxar com a pinça é "mão sobre mão":
+feche, puxe, solte e pegue de novo. A limpeza só conclui quando a área toda foi esfregada,
+e a pele fica com **marca** depois de curar (vermelhidão leve, cicatriz, casquinha).
+
 ## Como jogar
 
 1. Toque numa ferramenta na barra de baixo e depois no problema.
@@ -140,3 +154,9 @@ Criando uma tag `v*` (ex.: `v0.3.0`) o APK também vai para a página de **Relea
 - Para manter a mesma assinatura entre builds (atualizar sem desinstalar), salve um keystore
   em base64 no segredo `ANDROID_KEYSTORE_B64` (alias `androiddebugkey`, senha `android`).
 - Para a Play Store será preciso um keystore de release e AAB (Gradle build).
+
+## Arte e música
+
+- Logo e ícone: `tools/make_art.py` (PIL) com a fonte Lilita One; textos usam Fredoka (ambas OFL).
+- Ícones das ferramentas: renderizados dos próprios modelos 3D (`autoload/icons.gd`).
+- Músicas compostas por síntese própria em `tools/compose.py` (lo-fi da clínica e tema do menu).

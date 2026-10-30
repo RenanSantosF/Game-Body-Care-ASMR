@@ -16,6 +16,7 @@ const OUT := Color("37304a")
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Icons.icon_ready.connect(func(id): if id == tool_id: queue_redraw())
 
 func _l(a: Vector2, b: Vector2, c: Color, w: float) -> void:
 	var s := size.x
@@ -37,6 +38,13 @@ func _r(p: Vector2, sz: Vector2, c: Color, ang := 0.0) -> void:
 
 func _draw() -> void:
 	var s := size.x
+	var tx := Icons.get_tex(tool_id)
+	if tx:
+		var side := minf(size.x, size.y) * 1.25
+		draw_texture_rect(tx, Rect2((size - Vector2(side, side)) * 0.5, Vector2(side, side)), false)
+		if locked:
+			draw_rect(Rect2(Vector2.ZERO, size), Color(0.1, 0.08, 0.15, 0.55))
+		return
 	match tool_id:
 		"pano":
 			_r(Vector2(0.5, 0.55), Vector2(0.62, 0.42), Color("7cc8ff"), -0.25)

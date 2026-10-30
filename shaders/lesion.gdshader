@@ -19,6 +19,8 @@ uniform sampler2D fxw : filter_linear, repeat_disable;
 uniform float use_fx = 0.0;
 uniform float open_amt = 0.0;
 uniform float wet = 0.0;
+uniform float scar = 0.0;      // corte cicatrizando (casquinha)
+uniform float pore = 0.0;      // marca de poro (espinha) no meio da cicatriz
 uniform float rot = 0.0;
 uniform float half_size = 0.1;
 uniform float sss_amount = 0.5;
@@ -38,6 +40,7 @@ const int TRACK = 10;
 const int FLUID = 11;
 const int OILY = 12;
 const int SCRAPE = 13;
+const int SCAR = 14;
 
 varying vec3 wn;
 
@@ -234,6 +237,14 @@ void fragment() {
 		a = (1.0 - smoothstep(0.3, 1.0, r)) * 0.22;
 		col = vec3(1.0, 0.95, 0.75);
 		gloss = 1.0;
+	} else if (kind == SCAR) {
+		float e = (fbm(uv * 2.5 + seed) - 0.5) * 0.35;
+		a = (1.0 - smoothstep(0.15, 1.0, r + e)) * 0.6;
+		col = mix(skin, vec3(0.93, 0.52, 0.55), 0.5) * (0.95 + 0.08 * fbm(uv * 8.0 + seed));
+		float pc = (1.0 - smoothstep(0.04, 0.12, r)) * pore;
+		col = mix(col, vec3(0.45, 0.15, 0.12), pc * 0.8);
+		a = max(a, pc * 0.8);
+		gloss = 0.45;
 	} else if (kind == SCRAPE) {
 		a = (1.0 - smoothstep(0.3, 1.0, r)) * 0.7;
 		float scr = abs(sin(uv.y * 120.0 + fbm(uv * 4.0) * 5.0));
@@ -252,10 +263,13 @@ void fragment() {
 		col = mix(col, col * vec3(1.05, 0.85, 0.85), lip);
 		vec3 inside = mix(vec3(0.55, 0.05, 0.07), vec3(0.2, 0.0, 0.02), smoothstep(0.7, 1.0, f.a));
 		inside = mix(inside, vec3(0.95, 0.9, 0.7), smoothstep(0.9, 1.0, f.a) * 0.15 * open_amt);
+		vec3 crust = mix(vec3(0.42, 0.14, 0.1), vec3(0.62, 0.3, 0.22), fbm(uv * 20.0));
+		inside = mix(inside, crust, scar);
 		col = mix(col, inside, co);
+		col = mix(col, mix(skin, vec3(0.95, 0.55, 0.58), 0.5), lip * scar * 0.6);
 		a = max(a, co);
-		gloss = max(gloss, co * 0.9);
-		float bl = smoothstep(0.04, 0.3, f.g);
+		gloss = max(gloss, co * 0.9 * (1.0 - scar));
+		float bl = smoothstep(0.04, 0.3, f.g) * (1.0 - scar);
 		// sangue fresco: vermelho vivo fino nas bordas, escuro onde empoça
 		col = mix(col, mix(vec3(0.78, 0.04, 0.06), vec3(0.36, 0.0, 0.02), smoothstep(0.25, 0.95, f.g)), bl);
 		a = max(a, bl * 0.98);

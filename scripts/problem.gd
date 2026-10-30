@@ -136,8 +136,9 @@ func rub(wpos: Vector3, px: float, brush_r: float) -> void:
 	var target := _rub_target()
 	if a <= 1.0 and target != null:
 		var cov := _paint(target, wpos, brush_r, 0.3 * speed)
-		progress = clampf(cov / a, 0.0, 1.0)
-		if progress >= 0.9:
+		# precisa limpar de verdade a área toda (cobertura ponderada >= 92%)
+		progress = clampf(cov / 0.92, 0.0, 1.0)
+		if progress >= 0.995:
 			progress = 1.0
 		_visual()
 		if progress >= 1.0:
@@ -373,7 +374,7 @@ func _paint(mi: MeshInstance3D, wpos: Vector3, brush_r: float, strength: float) 
 	var v := (-d.x * sin(rot) + d.y * cos(rot)) / half
 	mk.paint(Vector2(u, v), brush_r / half, strength)
 	mk.flush()
-	return mk.coverage(0.7)
+	return mk.coverage()
 
 func _lmat(mi: MeshInstance3D) -> ShaderMaterial:
 	return mi.material_override as ShaderMaterial
@@ -445,33 +446,44 @@ func _fly_off(nd: Node3D, extra := Vector3.ZERO) -> void:
 	tw.tween_property(nd, "scale", nd.scale * 0.01, 0.3).set_delay(0.3)
 	tw.chain().tween_callback(nd.hide)
 
-func _bandage(w: float, l: float) -> void:
-	var b := Node3D.new()
-	add_child(b)
-	b.position = Vector3(0, 0.012, 0)
-	MeshGen.inst(b, MeshGen.sphere(1.0), MeshGen.std(BAND, 0.8), Vector3.ZERO, Vector3(w * 0.5, 0.014, l * 0.5))
-	MeshGen.inst(b, MeshGen.sphere(1.0), MeshGen.std(Color("fbf4ea"), 0.9), Vector3(0, 0.006, 0), Vector3(w * 0.2, 0.012, l * 0.2))
-	for i in 8:
-		var px := (float(i % 4) / 3.0 - 0.5) * w * 0.8
-		var pz := (-0.35 if i < 4 else 0.35) * l
-		MeshGen.inst(b, MeshGen.sphere(1.0), MeshGen.std(BAND.darkened(0.2), 0.8), Vector3(px, 0.011, pz), Vector3.ONE * 0.004)
-	b.scale = Vector3.ONE * 0.01
+## Curativo adesivo de verdade: fita perfurada + gaze, colado acompanhando a pele
+func _bandage(w: float, l: float, at := Vector3.INF, along := Vector3.INF) -> void:
+	var c := global_position if at == Vector3.INF else at
+	var fwd := global_basis.z if along == Vector3.INF else along
+	fwd.y = 0.0
+	if fwd.length() < 0.01:
+		fwd = Vector3(1, 0, 0)
+	fwd = fwd.normalized()
+	var rot := atan2(fwd.z, fwd.x)
+	var half := maxf(w, l) * 0.5
+	var mi := MeshInstance3D.new()
+	mi.mesh = MeshGen.patch(body, c, half, rot, 0.009, 22)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var m := MeshGen.shader_mat("res://shaders/bandage.gdshader")
+	m.set_shader_parameter("aspect", clampf(minf(w, l) / maxf(w, l), 0.2, 0.9))
+	m.set_shader_parameter("rot", rot)
+	m.set_shader_parameter("half_size", half)
+	m.set_shader_parameter("unroll", 0.0)
+	# sangue ou pus manchando a gaze por baixo
+	var bleedy := id in ["furunculo", "verme", "machucado", "unha_encravada", "larvas"]
+	m.set_shader_parameter("stain", 0.0)
+	m.set_shader_parameter("stain_col", Color(0.62, 0.08, 0.1) if bleedy else Color(0.85, 0.72, 0.35))
+	mi.material_override = m
+	body.add_child(mi)
+	var sp := body.surface(c.x, c.z)
+	mi.global_position = sp[0] if not sp.is_empty() else c
+	n["bandage"] = mi
 	var tw := create_tween()
-	tw.tween_property(b, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_method(func(v): m.set_shader_parameter("unroll", v), 0.0, 1.0, 0.55).set_ease(Tween.EASE_OUT)
+	tw.tween_method(func(v): m.set_shader_parameter("stain", v), 0.0, 0.55 if bleedy else 0.25, 2.5)
 	Sfx.play("tap")
+	Sfx.play_throttled("scrub", 0.1, 0.1, -12)
 
 func _nail_bandage() -> void:
 	var nd: Node3D = nail["node"]
-	var r: float = nail["r"]
-	var band := Node3D.new()
-	nd.add_child(band)
-	band.position = Vector3(0, -r * 0.6, nail["len"] * 0.55)
-	var ring := MeshGen.inst(band, MeshGen.cylinder(1.0, 1.0), MeshGen.std(BAND, 0.8), Vector3.ZERO, Vector3(r * 1.2, nail["len"] * 1.1, r * 1.05))
-	ring.rotation.x = PI / 2
-	MeshGen.inst(band, MeshGen.sphere(1.0), MeshGen.std(Color("fbf4ea"), 0.9), Vector3(0, r * 1.02, 0), Vector3(r * 0.6, 0.02, nail["len"] * 0.35))
-	band.scale = Vector3.ONE * 0.01
-	create_tween().tween_property(band, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	Sfx.play("tap")
+	var dirv: Vector3 = nail["dir"]
+	var at := nd.to_global(Vector3(0, 0, nail["len"] * 0.6))
+	_bandage(nail["r"] * 2.6, nail["len"] * 2.6, at, dirv)
 
 func _burst(pos: Vector3, c: Color, amount := 16, spd := 1.0, sz := 0.012, spread := 40.0) -> void:
 	var kind := -1
@@ -1036,8 +1048,8 @@ func rub_nail(wpos: Vector3, brush_r: float) -> bool:
 			var py := clampi(int(vv / 1.6 * CleanMask.SIZE), 0, CleanMask.SIZE - 1)
 			cov += mk.img.get_pixel(px, py).r
 			cnt += 1
-	progress = clampf(cov / cnt / a, 0.0, 1.0)
-	if progress >= 0.9:
+	progress = clampf(cov / cnt / 0.9, 0.0, 1.0)
+	if progress >= 0.995:
 		progress = 1.0
 	_visual()
 	if progress >= 1.0:
@@ -1363,9 +1375,20 @@ func _on_stage_end(s: int) -> void:
 
 func _on_done() -> void:
 	_end_guide()
-	for key in ["red", "splat", "blood", "grime", "oily", "dirt"]:
-		if n.has(key) and is_instance_valid(n[key]):
-			_fade_lesion(key, 0.9)
+	# vermelhidão diminui mas deixa marca; sujeira/pus que sobrou fica (limpe direito!)
+	if n.has("red") and is_instance_valid(n["red"]):
+		_heal_lesion("red", 0.55, 1.2)
+	if id in ["espinha", "bolha", "farpa", "pelo_encravado", "carrapato", "crosta", "calo", "furunculo", "verme", "larvas", "favo", "verruga", "machucado"]:
+		var mk := _lesion(14, size * (1.1 if id in ["larvas", "favo", "furunculo"] else 0.75), Vector2.ZERO, false, 0.003)
+		var mm := _lmat(mk)
+		mm.set_shader_parameter("pore", 1.0 if id in ["espinha", "pelo_encravado", "carrapato", "farpa"] else 0.0)
+		mm.set_shader_parameter("strength", 0.0)
+		create_tween().tween_method(func(v): mm.set_shader_parameter("strength", v), 0.0, 1.0, 1.2)
+		n["mark"] = mk
+	for h in fx_hosts:
+		if is_instance_valid(h):
+			var hm := h.material_override as ShaderMaterial
+			create_tween().tween_method(func(v): hm.set_shader_parameter("scar", v), 0.0, 1.0, 1.5)
 	match id:
 		"espinha", "pelo_encravado", "bolha", "furunculo", "unha_pus":
 			_shrink("dome", 1.2)

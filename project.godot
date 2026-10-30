@@ -9,13 +9,15 @@ config/name="Gross to Glow"
 config/description="Clínica nojenta e satisfatória: trate pacientes e veja o antes e depois!"
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
-config/icon="res://icon.svg"
+config/icon="res://icon.png"
 
 [autoload]
 
+NoiseLib="*res://autoload/noise_lib.gd"
 GameData="*res://autoload/game_data.gd"
 Sfx="*res://autoload/sfx.gd"
 Ads="*res://autoload/ad_manager.gd"
+Icons="*res://autoload/icons.gd"
 
 [display]
 
@@ -66,4 +68,20 @@ pull_amt={
 pull_r={
 "type": "float",
 "value": 0.06
+}
+g_vn={
+"type": "sampler2D",
+"value": ""
+}
+g_fbm={
+"type": "sampler2D",
+"value": ""
+}
+g_c1={
+"type": "sampler2D",
+"value": ""
+}
+g_c2={
+"type": "sampler2D",
+"value": ""
 }

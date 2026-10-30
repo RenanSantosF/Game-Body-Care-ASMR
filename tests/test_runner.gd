@@ -62,10 +62,12 @@ func solve(game, p: Problem) -> void:
 	match p.mech():
 		Defs.Mech.HOLD:
 			game._press(c)
+			game._trigger(true)
 			var g := 0
 			while p.stage == st and not p.done and g < 500:
 				g += 1
 				await get_tree().process_frame
+			game._trigger(false)
 			game._release()
 		Defs.Mech.RUB:
 			var R: float = game._screen_radius(p) * 1.25
@@ -89,18 +91,26 @@ func solve(game, p: Problem) -> void:
 					await get_tree().process_frame
 			game._release()
 		Defs.Mech.PULL:
+			# pega com o segundo dedo, puxa, solta e pega de novo (mão sobre mão)
 			game._press(c)
 			var g := 0
-			var pos := c
-			while p.stage == st and not p.done and g < 3000:
+			while p.stage == st and not p.done and g < 40:
 				g += 1
-				pos += Vector2(3, -2) if (g / 25) % 2 == 0 else Vector2(-3, 2)
-				game._drag(pos)
+				game._drag(c)
+				game._trigger(true)
+				for k in 60:
+					game._drag(c + Vector2(k * 3.0, -k * 2.0))
+					await get_tree().process_frame
+					if p.stage != st or p.done:
+						break
+				game._trigger(false)
 				await get_tree().process_frame
 			game._release()
 		Defs.Mech.TAP:
 			game._press(c)
+			game._trigger(true)
 			await get_tree().process_frame
+			game._trigger(false)
 			game._release()
 		Defs.Mech.SWEEP, Defs.Mech.PICK:
 			var g := 0
@@ -111,7 +121,10 @@ func solve(game, p: Problem) -> void:
 						var ip := _sp(game, it["pos"])
 						game._press(ip)
 						game._drag(ip + Vector2(2, 0))
+						if p.mech() == Defs.Mech.PICK:
+							game._trigger(true)
 						await get_tree().process_frame
+						game._trigger(false)
 						game._release()
 						break
 				await get_tree().process_frame

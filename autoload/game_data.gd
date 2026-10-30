@@ -14,6 +14,7 @@ var streak := 0
 var last_daily := ""
 var levels_since_ad := 0
 var sound_on := true
+var music_on := true
 var vibrate_on := true
 var patients_treated := 0
 
@@ -22,6 +23,10 @@ func _ready() -> void:
 	current_level = level
 	var th := Theme.new()
 	th.default_font_size = 26
+	var fv := FontVariation.new()
+	fv.base_font = load("res://assets/fonts/Fredoka.ttf")
+	fv.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 600}
+	th.default_font = fv
 	get_tree().root.theme = th
 
 func add_coins(n: int) -> void:
@@ -103,7 +108,7 @@ func save_game() -> void:
 	var d := {
 		"coins": coins, "level": level, "stars": stars, "owned": owned,
 		"streak": streak, "last_daily": last_daily, "levels_since_ad": levels_since_ad,
-		"sound_on": sound_on, "vibrate_on": vibrate_on, "patients": patients_treated,
+		"sound_on": sound_on, "music_on": music_on, "vibrate_on": vibrate_on, "patients": patients_treated,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -128,5 +133,6 @@ func load_game() -> void:
 	last_daily = str(d.get("last_daily", ""))
 	levels_since_ad = int(d.get("levels_since_ad", 0))
 	sound_on = bool(d.get("sound_on", true))
+	music_on = bool(d.get("music_on", true))
 	vibrate_on = bool(d.get("vibrate_on", true))
 	patients_treated = int(d.get("patients", 0))

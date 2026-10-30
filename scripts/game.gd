@@ -52,6 +52,25 @@ var stroke_first := true
 var press_cur := 0.0
 var pull_cur := 0.0
 var last_cut_hurt := -10.0
+# câmera controlada pelo jogador (pinça para zoom, arrastar para mover)
+var cam_dist := 4.6
+const WIDE_D := 4.6
+const MIN_D := 0.55
+# toque: dedo da ferramenta + segundo dedo (aciona) ou gesto de câmera
+const TOOL_OFFSET := Vector2(-70, -130)   # ferramenta aparece acima/esquerda do dedo
+var touches := {}
+var tool_touch := -1
+var trig_touch := -1
+var triggering := false
+var cam_gesture := false
+var pinch_d0 := 1.0
+var cam_d0 := 1.0
+var pan_last := Vector2.ZERO
+var grip_start := Vector2.ZERO
+var pull_max := 0.0
+var tool_pos := Vector3.ZERO
+var tool_vel := Vector3.ZERO
+var guide: GuideArrow
 
 var hud: CanvasLayer
 var hud_root: Control
@@ -76,6 +95,7 @@ func _ready() -> void:
 		data["part"] = GameData.get_meta("lab_part", data["part"])
 	rng.seed = data["seed"] + 99
 	Stage.setup_env(self, data["look"]["pillow"])
+	Sfx.play_music("clinic")
 	body = Body.new()
 	add_child(body)
 	body.build(data["part"], data["look"]["skin"])
@@ -93,8 +113,8 @@ func _ready() -> void:
 	cam.fov = 40.0
 	add_child(cam)
 	cam.current = true
-	cam_pos = _wide_pos()
-	cam_look = body.cam_center
+	cam_dist = WIDE_D
+	cam_look = Vector3(body.cam_center.x, 0, body.cam_center.z)
 	_apply_cam()
 
 	tool_model = ToolModel.new()
@@ -212,8 +232,9 @@ func _begin() -> void:
 		await get_tree().create_timer(0.9).timeout
 		_toast("CASO EXTREMO!", UIKit.RED, 64, 1.3)
 	await get_tree().create_timer(1.0).timeout
-	_focus_on(_first_problem())
+	focus = _first_problem()
 	input_ok = true
+	_toast("Dois dedos: zoom. Segundo dedo: usar a ferramenta.", UIKit.YELLOW, 26, 2.6)
 	if level == 1:
 		_toast("Escolha a ferramenta e toque no problema!", UIKit.YELLOW, 32, 3.0)
 	_update_labels()
@@ -230,21 +251,60 @@ func _first_problem() -> Problem:
 const CAM_UP := Vector3(1, 0, 0)   # retrato: dedos apontam para cima na tela
 
 func _wide_pos() -> Vector3:
-	return body.cam_center + Vector3(-1.5, 4.3, 0)
+	return _cam_pos_for(body.cam_center, WIDE_D)
+
+func _cam_pos_for(look: Vector3, d: float) -> Vector3:
+	return look + Vector3(0, d, 0) - CAM_UP * d * 0.36
 
 func _apply_cam() -> void:
 	var off := Vector3.ZERO
 	if shake > 0.0:
 		off = Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * shake
+	cam_pos = _cam_pos_for(cam_look, cam_dist)
 	cam.global_position = cam_pos + off
 	cam.look_at(cam_look + off, CAM_UP)
+	wide = cam_dist > 2.6
 
 func _move_cam(pos: Vector3, look: Vector3, dur := 0.7) -> void:
+	# pos é ignorado: a câmera é definida por alvo + distância
 	if cam_tween:
 		cam_tween.kill()
+	var d := clampf(pos.distance_to(look) / 1.065, MIN_D, WIDE_D)
 	cam_tween = create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-	cam_tween.tween_property(self, "cam_pos", pos, dur)
+	cam_tween.tween_property(self, "cam_dist", d, dur)
 	cam_tween.tween_property(self, "cam_look", look, dur)
+
+## Zoom/pan com dois dedos
+func _cam_zoom(factor: float, focus_px := Vector2(-1, -1)) -> void:
+	if cam_tween:
+		cam_tween.kill()
+	var before := _screen_to_plane(focus_px) if focus_px.x >= 0 else cam_look
+	cam_dist = clampf(cam_dist * factor, MIN_D, WIDE_D)
+	_apply_cam()
+	if focus_px.x >= 0:
+		var after := _screen_to_plane(focus_px)
+		cam_look += before - after
+		_clamp_look()
+
+func _cam_pan(delta_px: Vector2) -> void:
+	if cam_tween:
+		cam_tween.kill()
+	var a := _screen_to_plane(pan_last)
+	var b := _screen_to_plane(pan_last + delta_px)
+	cam_look += a - b
+	_clamp_look()
+
+func _clamp_look() -> void:
+	cam_look.x = clampf(cam_look.x, -2.4, 2.2)
+	cam_look.z = clampf(cam_look.z, -1.3, 1.0)
+	cam_look.y = 0.0
+
+func _screen_to_plane(px: Vector2) -> Vector3:
+	var o := cam.project_ray_origin(px)
+	var d := cam.project_ray_normal(px)
+	if absf(d.y) < 0.001:
+		return cam_look
+	return o + d * ((0.1 - o.y) / d.y)
 
 func _focus_on(p: Problem) -> void:
 	if p == null:
@@ -255,15 +315,38 @@ func _focus_on(p: Problem) -> void:
 	var d := clampf(0.55 + p.focus_radius() * 2.6, 0.75, 1.5)
 	# um pouco acima do centro da tela por causa da barra de ferramentas
 	var look := target - CAM_UP * d * 0.12
-	_move_cam(look + Vector3(0, d, 0) - CAM_UP * d * 0.42, look)
+	look.y = 0.0
+	_move_cam(_cam_pos_for(look, d), look)
 	_update_labels()
 	for q in problems:
 		q.show_guide(q == p and q.tool() == selected)
 
 func _go_wide() -> void:
-	wide = true
-	_move_cam(_wide_pos(), body.cam_center)
+	_move_cam(_wide_pos(), Vector3(body.cam_center.x, 0, body.cam_center.z))
 	_update_labels()
+
+## Próximo problema sugerido (sujeira primeiro, depois o mais perto)
+func _next_problem(from: Vector3) -> Problem:
+	for p in problems:
+		if not p.done and p.id == "sujeira":
+			return p
+	return _nearest(from)
+
+func _update_guide() -> void:
+	if guide == null:
+		return
+	if pressing and active and not active.done and not triggering and active.mech() in [Defs.Mech.HOLD, Defs.Mech.PULL, Defs.Mech.PICK, Defs.Mech.TAP]:
+		var verb: String = {"pinca": "fechar a pinça", "espremedor": "apertar", "agulha": "furar", "spray": "borrifar", "curativo": "colar o curativo"}.get(selected, "usar")
+		lbl_hint.text = "Toque com OUTRO dedo para %s!" % verb
+	var p := focus if focus and not focus.done else _next_problem(cam_look)
+	focus = p
+	if p == null or finished or (pressing and active == p):
+		guide.visible = false
+		return
+	guide.visible = true
+	guide.behind = cam.is_position_behind(p.center())
+	guide.target = cam.unproject_position(p.center())
+	guide.radius = _screen_radius(p)
 
 func _nearest(from: Vector3) -> Problem:
 	var best: Problem = null
@@ -293,7 +376,7 @@ func _process(delta: float) -> void:
 		a.speed = GameData.speed_mult(selected) * _dirt_mult(a)
 		match a.mech():
 			Defs.Mech.HOLD:
-				if _within(a, last_pos, 1.9):
+				if triggering and _within(a, last_pos, 1.9):
 					fx_t -= delta
 					if fx_t <= 0.0:
 						fx_t = 0.1
@@ -304,6 +387,10 @@ func _process(delta: float) -> void:
 					_dirty_pain(a, delta)
 					a.hold(delta)
 			Defs.Mech.PULL:
+				# só puxa com a pinça fechada (segundo dedo); conta o quanto afastou da pegada
+				var dnow := last_pos.distance_to(grip_start) if triggering else 0.0
+				frame_pull = maxf(0.0, dnow - pull_max) if triggering else 0.0
+				pull_max = maxf(pull_max, dnow)
 				var cap := 480.0 * delta
 				var amt := minf(frame_pull, cap)
 				if frame_pull > cap * 2.4:
@@ -313,6 +400,7 @@ func _process(delta: float) -> void:
 					_dirty_pain(a, delta)
 					a.pull(amt)
 	frame_pull = 0.0
+	_update_guide()
 	_update_tool_model()
 	_update_deform(delta)
 	_update_hint_glow()
@@ -421,6 +509,7 @@ func _update_tool_model() -> void:
 	if not pressing or selected == "":
 		tool_model.visible = false
 		tool_model.set_active(false)
+		tool_model.remove_meta("shown")
 		return
 	tool_model.visible = true
 	var hit := _ray_body(last_pos)
@@ -431,15 +520,23 @@ func _update_tool_model() -> void:
 		pos = o + d * ((0.05 - o.y) / d.y)
 	else:
 		pos = hit[0] + hit[1] * 0.006
-	if active and active.mech() == Defs.Mech.PULL:
+	if active and active.mech() == Defs.Mech.PULL and triggering:
 		pos = pos.lerp(active.grip_point(), 0.6)
-	tool_model.global_position = pos - Vector3(0, press_cur * 0.8, 0)
+	pos -= Vector3(0, press_cur * 0.8, 0)
+	if not tool_model.has_meta("shown"):
+		tool_pos = pos
+		tool_model.set_meta("shown", true)
+	var prev := tool_pos
+	tool_pos = tool_pos.lerp(pos, 0.45)
+	tool_vel = tool_vel.lerp((tool_pos - prev) * 60.0, 0.2)
+	tool_model.global_position = tool_pos
 	var cb := cam.global_basis
-	var y := (Vector3.UP * 0.75 + cb.z * 0.35 + cb.x * 0.35).normalized()
+	var y := (Vector3.UP * 0.75 + cb.z * 0.35 + cb.x * 0.35 - Vector3(tool_vel.x, 0, tool_vel.z) * 0.15).normalized()
 	var x := (cb.x - y * cb.x.dot(y)).normalized()
 	var z := x.cross(y)
 	var dist := cam.global_position.distance_to(pos)
 	tool_model.global_basis = Basis(x, y, z).scaled(Vector3.ONE * clampf(dist / 1.3, 0.6, 2.5))
+	tool_model.grip = triggering
 	tool_model.set_active(active != null, active.mech() if active else -1)
 
 # =================================================================== entrada
@@ -447,13 +544,135 @@ func _update_tool_model() -> void:
 func _unhandled_input(e: InputEvent) -> void:
 	if not input_ok or modal_open:
 		return
-	if e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT:
-		if e.pressed:
-			_press(e.position)
-		else:
-			_release()
-	elif e is InputEventMouseMotion and pressing:
-		_drag(e.position)
+	# ---- toque (celular)
+	if e is InputEventScreenTouch:
+		_on_touch(e.index, e.position, e.pressed)
+		return
+	if e is InputEventScreenDrag:
+		_on_touch_drag(e.index, e.position, e.relative)
+		return
+	# ---- mouse (PC). Ignora o mouse emulado pelo toque.
+	if e.device == InputEvent.DEVICE_ID_EMULATION:
+		return
+	if e is InputEventMouseButton:
+		match e.button_index:
+			MOUSE_BUTTON_LEFT:
+				if e.pressed:
+					_tool_down(e.position)
+				else:
+					_tool_up()
+			MOUSE_BUTTON_RIGHT:
+				_trigger(e.pressed)
+			MOUSE_BUTTON_WHEEL_UP:
+				if e.pressed:
+					_cam_zoom(0.9, e.position)
+			MOUSE_BUTTON_WHEEL_DOWN:
+				if e.pressed:
+					_cam_zoom(1.1, e.position)
+	elif e is InputEventMouseMotion:
+		if e.button_mask & MOUSE_BUTTON_MASK_MIDDLE:
+			pan_last = e.position - e.relative
+			_cam_pan(e.relative)
+		elif pressing:
+			_drag(e.position)
+	elif e is InputEventKey and e.keycode == KEY_SPACE and not e.echo:
+		_trigger(e.pressed)
+
+func _on_touch(idx: int, pos: Vector2, down: bool) -> void:
+	if down:
+		touches[idx] = pos
+		if touches.size() == 1:
+			tool_touch = idx
+			_tool_down(pos + TOOL_OFFSET)
+		elif touches.size() == 2:
+			if tool_touch >= 0 and active != null:
+				# segundo dedo aciona a ferramenta
+				trig_touch = idx
+				_trigger(true)
+			else:
+				# dois dedos: zoom e mover a câmera
+				if tool_touch >= 0:
+					_tool_up()
+				tool_touch = -1
+				cam_gesture = true
+				var ps: Array = touches.values()
+				pinch_d0 = maxf(20.0, ps[0].distance_to(ps[1]))
+				cam_d0 = cam_dist
+				pan_last = (ps[0] + ps[1]) * 0.5
+	else:
+		touches.erase(idx)
+		if idx == trig_touch:
+			trig_touch = -1
+			_trigger(false)
+		if idx == tool_touch:
+			tool_touch = -1
+			_trigger(false)
+			_tool_up()
+		if touches.size() < 2:
+			cam_gesture = false
+		if touches.is_empty():
+			cam_gesture = false
+
+func _on_touch_drag(idx: int, pos: Vector2, rel: Vector2) -> void:
+	touches[idx] = pos
+	if cam_gesture and touches.size() >= 2:
+		var ps: Array = touches.values()
+		var d := maxf(20.0, ps[0].distance_to(ps[1]))
+		var mid: Vector2 = (ps[0] + ps[1]) * 0.5
+		if cam_tween:
+			cam_tween.kill()
+		var target := clampf(cam_d0 * pinch_d0 / d, MIN_D, WIDE_D)
+		_cam_zoom(target / maxf(cam_dist, 0.001), mid)
+		_cam_pan(mid - pan_last)
+		pan_last = mid
+		return
+	if idx == tool_touch:
+		if selected == "" and active == null:
+			# sem ferramenta, um dedo move a câmera
+			pan_last = pos - rel
+			_cam_pan(rel)
+			return
+		_drag(pos + TOOL_OFFSET)
+
+func _tool_down(pos: Vector2) -> void:
+	if selected == "":
+		pressing = false
+		last_pos = pos
+		return
+	_press(pos)
+
+func _tool_up() -> void:
+	if pressing:
+		_release()
+
+## Segundo dedo: fecha a pinça, aperta o espremedor, fura com a agulha, aplica o curativo...
+func _trigger(on: bool) -> void:
+	if on == triggering:
+		return
+	triggering = on
+	if not on:
+		return
+	GameData.vibrate(12)
+	Sfx.play("tap", 0.1, -10)
+	var a := active
+	if a == null:
+		if pressing and selected != "":
+			var p := _pick_problem(last_pos)
+			if p and p.tool() == selected:
+				_start_on(p, last_pos)
+				a = active
+		if a == null:
+			return
+	match a.mech():
+		Defs.Mech.PICK:
+			if not a.pick(last_pos, 70.0, cam):
+				_toast("Mire em cima de um!", UIKit.YELLOW, 30, 0.6)
+		Defs.Mech.TAP:
+			a.tap()
+		Defs.Mech.PULL:
+			grip_start = last_pos
+			pull_max = 0.0
+			Sfx.play("pull", 0.2, -10)
 
 func _screen_radius(p: Problem) -> float:
 	var c := cam.unproject_position(p.center())
@@ -502,13 +721,6 @@ func _press(pos: Vector2) -> void:
 	last_pos = pos
 	frame_pull = 0.0
 	var p := _pick_problem(pos)
-	if wide:
-		if p == null:
-			p = _pick_problem(pos, 2.5)
-		if p:
-			_focus_on(p)
-		pressing = false
-		return
 	if p == null:
 		_skin_touch(pos)
 		return
@@ -557,10 +769,10 @@ func _start_on(p: Problem, pos: Vector2) -> void:
 	p.speed = GameData.speed_mult(selected) * _dirt_mult(p)
 	lbl_hint.text = Defs.MECH_HINT[p.mech()]
 	match p.mech():
-		Defs.Mech.TAP:
-			p.tap()
-		Defs.Mech.PICK:
-			p.pick(pos, 60.0, cam)
+		Defs.Mech.TAP, Defs.Mech.PICK, Defs.Mech.HOLD:
+			if triggering:
+				triggering = false
+				_trigger(true)
 		Defs.Mech.SWEEP:
 			p.sweep(pos, _sweep_r(), cam)
 		Defs.Mech.CUT:
@@ -570,10 +782,9 @@ func _start_on(p: Problem, pos: Vector2) -> void:
 			else:
 				_cut_start(p, pos)
 		Defs.Mech.PULL:
-			var hit := _ray_body(pos)
 			p.pull_dir = Vector3(cam.global_basis.x.x, 0, cam.global_basis.x.z).normalized()
-			if not hit.is_empty():
-				pass
+			grip_start = pos
+			pull_max = 0.0
 		Defs.Mech.RUB:
 			_do_rub(p, pos, 0.0)
 
@@ -666,7 +877,7 @@ func _do_rub(p: Problem, pos: Vector2, px: float) -> void:
 func _drag(pos: Vector2) -> void:
 	var rel := pos.distance_to(last_pos)
 	last_pos = pos
-	if active == null and selected != "" and not wide:
+	if active == null and selected != "":
 		var p := _pick_problem(pos)
 		if p and p.tool() == selected and p.mech() in [Defs.Mech.RUB, Defs.Mech.SWEEP]:
 			_start_on(p, pos)
@@ -697,6 +908,7 @@ func _drag(pos: Vector2) -> void:
 
 func _release() -> void:
 	pressing = false
+	triggering = false
 	if active:
 		active.end_stroke()
 	active = null
@@ -795,11 +1007,7 @@ func _on_stage_done(p: Problem, fin: bool) -> void:
 			_finish()
 			return
 		if p == focus:
-			await get_tree().create_timer(0.6).timeout
-			if not finished and not pressing:
-				_focus_on(_nearest(p.center()))
-			elif not finished:
-				focus = _nearest(p.center())
+			focus = _next_problem(p.center())
 
 func _on_popped(p: Problem, _c: Color) -> void:
 	shake = 0.025
@@ -870,7 +1078,6 @@ func _finish() -> void:
 	Sfx.play("success")
 	_toast("PACIENTE CURADO!", UIKit.GREEN, 60, 1.4)
 	await get_tree().create_timer(1.0).timeout
-	body.fade_stains()
 	_go_wide()
 	await get_tree().create_timer(1.2).timeout
 	hud.visible = false
@@ -1081,10 +1288,14 @@ func _build_hud() -> void:
 		if not input_ok:
 			return
 		if wide:
-			_focus_on(focus if focus and not focus.done else _nearest(body.cam_center))
+			_focus_on(_next_problem(cam_look))
 		else:
 			_go_wide())
 	side.add_child(zoom)
+
+	guide = GuideArrow.new()
+	hud_root.add_child(guide)
+	hud_root.move_child(guide, 0)
 
 	var bar_panel := PanelContainer.new()
 	var sb := UIKit.style(Color(1, 1, 1, 0.88), 24, 4, Color("d9cff0"))
@@ -1174,7 +1385,7 @@ func _update_labels() -> void:
 		return
 	var p := _target()
 	if wide:
-		lbl_problem.text = "Toque num problema para aproximar"
+		lbl_problem.text = "Afaste/junte dois dedos para dar zoom"
 		lbl_hint.text = ""
 		return
 	if p == null:

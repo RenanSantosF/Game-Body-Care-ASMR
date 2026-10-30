@@ -28,8 +28,16 @@ static func style(color: Color, radius := 22, border := 0, border_color := Color
 	sb.anti_aliasing = true
 	return sb
 
+static var _title_font: Font
+
+static func title_font() -> Font:
+	if _title_font == null:
+		_title_font = load("res://assets/fonts/LilitaOne-Regular.ttf")
+	return _title_font
+
 static func btn(text: String, color := PINK, font := 30, min_size := Vector2(220, 78)) -> Button:
 	var b := Button.new()
+	b.add_theme_font_override("font", title_font())
 	b.text = text
 	b.custom_minimum_size = min_size
 	b.focus_mode = Control.FOCUS_NONE
@@ -52,6 +60,8 @@ static func btn(text: String, color := PINK, font := 30, min_size := Vector2(220
 static func label(text: String, size := 30, color := Color.WHITE, outline := 8, outline_color := DARK) -> Label:
 	var l := Label.new()
 	l.text = text
+	if size >= 36:
+		l.add_theme_font_override("font", title_font())
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", color)
 	l.add_theme_color_override("font_outline_color", outline_color)

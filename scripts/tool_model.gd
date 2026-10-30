@@ -4,6 +4,7 @@ extends Node3D
 
 var tool_id := ""
 var active := false
+var grip := false                # segundo dedo pressionado
 var mech := -1
 var t := 0.0
 var root: Node3D
@@ -234,15 +235,15 @@ func _process(delta: float) -> void:
 	root.rotation = Vector3.ZERO
 	match tool_id:
 		"pinca":
-			var closed := active and (mech == Defs.Mech.PULL or mech == Defs.Mech.PICK)
+			var closed := grip
 			for side in [-1, 1]:
 				var arm: Node3D = parts["arm%d" % side]
 				arm.rotation.z = lerpf(arm.rotation.z, (0.0 if closed else 0.06) * -side, 0.35)
 		"agulha":
-			if active:
+			if active and grip:
 				parts["needle"].position.y = -absf(sin(t * 10.0)) * 0.02
 		"espremedor":
-			if active:
+			if active and grip:
 				parts["press"].position.y = -0.008 - sin(t * 16.0) * 0.004
 		"pano", "algodao":
 			if active:
@@ -255,7 +256,7 @@ func _process(delta: float) -> void:
 				root.rotation.z = sin(t * 22.0) * 0.1
 		"alicate":
 			var close := 0.0
-			if active:
+			if active and (grip or mech == Defs.Mech.CUT):
 				close = 0.5 + 0.5 * sin(t * 12.0)
 			parts["jaw_a"].rotation.x = lerpf(0.18, 0.0, close)
 			parts["jaw_b"].rotation.x = -lerpf(0.18, 0.0, close)
@@ -263,5 +264,7 @@ func _process(delta: float) -> void:
 			if active:
 				parts["tube"].scale = Vector3(1.0 + sin(t * 10.0) * 0.06, 1.0, 1.0 + sin(t * 10.0) * 0.06)
 		"spray":
-			if active:
+			if spray_fx:
+				spray_fx.emitting = active and grip
+			if active and grip:
 				root.position.x = sin(t * 30.0) * 0.003

@@ -43,21 +43,23 @@ func flush() -> void:
 		dirty = false
 		tex.update(img)
 
-## Fração limpa dentro do círculo de raio r (uv)
-func coverage(r := 0.8) -> float:
+## Fração limpa da área toda, com peso maior no centro (onde a lesão é mais grossa)
+func coverage() -> float:
 	var tot := 0.0
-	var n := 0
-	for j in 12:
-		for i in 12:
-			var u := -1.0 + (i + 0.5) / 6.0
-			var v := -1.0 + (j + 0.5) / 6.0
-			if u * u + v * v > r * r:
+	var wsum := 0.0
+	for j in 16:
+		for i in 16:
+			var u := -1.0 + (i + 0.5) / 8.0
+			var v := -1.0 + (j + 0.5) / 8.0
+			var r := sqrt(u * u + v * v)
+			if r > 1.0:
 				continue
+			var w := 1.0 - smoothstep(0.6, 1.0, r) * 0.8
 			var x := clampi(int((u * 0.5 + 0.5) * SIZE), 0, SIZE - 1)
 			var y := clampi(int((v * 0.5 + 0.5) * SIZE), 0, SIZE - 1)
-			tot += img.get_pixel(x, y).r
-			n += 1
-	return tot / maxf(1.0, n)
+			tot += img.get_pixel(x, y).r * w
+			wsum += w
+	return tot / maxf(0.001, wsum)
 
 func clear_all() -> void:
 	img.fill(Color(1, 1, 1, 1))
