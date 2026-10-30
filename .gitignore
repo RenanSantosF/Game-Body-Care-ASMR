@@ -3,3 +3,5 @@ export/
 *.apk
 *.aab
 android/build/
+assets/body/*.json
+!assets/body/*_meta.json

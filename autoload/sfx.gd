@@ -23,6 +23,8 @@ func _ready() -> void:
 	streams["tap"] = _synth(0.1, 420, 300, 0.2, 2.5, 0.0, 0.3)
 	streams["click"] = _synth(0.05, 880, 640, 0.1, 3.0, 0.0, 0.5)
 	streams["wrong"] = _synth(0.3, 150, 110, 0.0, 1.0, 0.0, 0.5, true)
+	streams["poke"] = _synth(0.09, 1400, 700, 0.5, 2.5, 0.0, 0.7)
+	streams["ouch"] = _voice()
 	streams["coin"] = _seq([[988, 0.07], [1318, 0.14]])
 	streams["success"] = _seq([[523, 0.1], [659, 0.1], [784, 0.1], [1046, 0.25]])
 	streams["star"] = _seq([[1046, 0.08], [1568, 0.16]])
@@ -87,4 +89,20 @@ func _seq(notes: Array) -> AudioStreamWAV:
 			var k := float(i) / n
 			phase += TAU * nt[0] / RATE
 			s.append((sin(phase) * 0.6 + sin(phase * 2.0) * 0.15) * pow(1.0 - k, 1.5) * 0.6)
+	return _wav(s)
+
+## "Ai!" sintetizado (formante simples)
+func _voice() -> AudioStreamWAV:
+	var n := int(0.35 * RATE)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var ph := 0.0
+	for i in n:
+		var k := float(i) / n
+		var f := lerpf(520.0, 300.0, k) * (1.0 + 0.03 * sin(i * 0.004))
+		ph += TAU * f / RATE
+		var saw := fmod(ph / TAU, 1.0) * 2.0 - 1.0
+		var form := sin(ph * 2.0) * 0.5 + sin(ph * 3.0) * 0.3
+		var env := minf(1.0, k * 20.0) * pow(1.0 - k, 1.2)
+		s[i] = (saw * 0.35 + form * 0.4) * env * 0.6
 	return _wav(s)
