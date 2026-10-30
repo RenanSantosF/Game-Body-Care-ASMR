@@ -314,16 +314,47 @@ func _focus_on(p: Problem) -> void:
 		return
 	focus = p
 	wide = false
-	var target := p.center()
-	var d := clampf(0.6 + p.focus_radius() * 2.6, 0.92, 1.6)
-	# um pouco acima do centro da tela por causa da barra de ferramentas
-	var look := target - CAM_UP * d * 0.12
-	look.y = target.y
-	look.x = maxf(look.x, -2.2 + d * 0.62)
-	_move_cam(_cam_pos_for(look, d), look)
+	var fr := _frame_for(p.center(), p.focus_radius())
+	_move_cam(_cam_pos_for(fr[0], fr[1]), fr[0])
 	_update_labels()
 	for q in problems:
 		q.show_guide(q == p and q.tool() == selected)
+
+## Enquadra o alvo inteiro na área útil: abaixo do HUD e acima da barra de ferramentas,
+## com folga para o dedo (a ferramenta fica acima/esquerda dele). Retorna [look, dist].
+func _frame_for(target: Vector3, radius: float) -> Array:
+	var vr := get_viewport().get_visible_rect().size
+	var bar_top := vr.y * 0.82
+	if tool_bar and tool_bar.get_parent() is Control:
+		var br := (tool_bar.get_parent() as Control).get_global_rect()
+		if br.size.y > 1.0:
+			bar_top = br.position.y
+	var top := vr.y * 0.14
+	var bottom := maxf(top + vr.y * 0.3, bar_top + TOOL_OFFSET.y - 10.0)
+	var want := Vector2(vr.x * 0.5 + TOOL_OFFSET.x * 0.25, (top + bottom) * 0.5)
+	var max_r := minf(vr.x * 0.36, (bottom - top) * 0.5 * 0.9)
+	var d := clampf(0.6 + radius * 2.6, 0.92, WIDE_D * 0.8)
+	var look := target
+	var saved := cam.global_transform
+	for it in 6:
+		cam.global_position = _cam_pos_for(look, d)
+		cam.look_at(look, CAM_UP)
+		var c := cam.unproject_position(target)
+		var rp := c.distance_to(cam.unproject_position(target + cam.global_basis.x * radius))
+		if rp > max_r:
+			d = minf(d * rp / max_r * 1.03, WIDE_D * 0.8)
+		var a := _plane_hit(c, target.y)
+		var b := _plane_hit(want, target.y)
+		look += Vector3(a.x - b.x, 0.0, a.z - b.z)
+	cam.global_transform = saved
+	return [look, d]
+
+func _plane_hit(px: Vector2, y: float) -> Vector3:
+	var o := cam.project_ray_origin(px)
+	var dir := cam.project_ray_normal(px)
+	if absf(dir.y) < 0.001:
+		return o
+	return o + dir * ((y - o.y) / dir.y)
 
 func _go_wide() -> void:
 	_move_cam(_wide_pos(), Vector3(body.cam_center.x, 0, body.cam_center.z))

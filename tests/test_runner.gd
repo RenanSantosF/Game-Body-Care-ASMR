@@ -50,6 +50,7 @@ func play(game, seen: Dictionary) -> void:
 		game._focus_on(p)
 		await _wait(0.8)
 		game._select_tool(p.tool())
+		_check_frame(game, p)
 		if OS.get_environment("VERBOSE") != "":
 			print("   ", p.id, " etapa ", p.stage, " ", p.tool(), " mech ", p.mech(), " prog ", snappedf(p.progress, 0.01), " dor ", int(game.pain), " erros ", game.mistakes)
 		await solve(game, p)
@@ -134,3 +135,12 @@ func solve(game, p: Problem) -> void:
 						break
 				await get_tree().process_frame
 	await _wait(0.2)
+
+## o problema tem que caber inteiro acima da barra de ferramentas (com folga do dedo)
+func _check_frame(game, p: Problem) -> void:
+	var vr: Vector2 = game.get_viewport().get_visible_rect().size
+	var c: Vector2 = game.cam.unproject_position(p.center())
+	var r: float = c.distance_to(game.cam.unproject_position(p.center() + game.cam.global_basis.x * p.focus_radius()))
+	var bar: float = (game.tool_bar.get_parent() as Control).get_global_rect().position.y
+	if c.y + r > bar - 100.0 or c.y - r < vr.y * 0.1 or c.x - r < -10.0 or c.x + r > vr.x + 10.0:
+		print("   ENQUADRAMENTO RUIM: ", p.id, " centro ", c, " raio ", int(r), " barra ", int(bar), " tela ", vr)
