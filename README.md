@@ -92,6 +92,13 @@ Furar/cortar pele saudável cria um machucado que precisa de algodão e curativo
 Cada problema sai com tamanho e cor de pus/sangue diferentes, e a mesma fase evita repetir o que saiu na anterior.
 Pano e algodão continuam limpando a sujeira que sobrou mesmo depois do problema estar "pronto".
 
+### v0.9: corpo inteiro e erros com consequência
+
+- **Partes do corpo**: mão, pé, **costas** (de bruços, coluna e escápulas), **rosto** (nariz, lábios, sobrancelhas, barba) e **cabeça** (couro cabeludo com cabelo denso). Geradas por SDF em `tools/bodygen.py` (malhas leves, ~30–37 mil vértices).
+- **Problemas novos**: carbúnculo com várias cabeças de pus, acne inflamada, queimadura com bolhas e pele soltando, pontos infeccionados, piolhos andando + lêndeas, caspa grossa, barba enorme.
+- **Ferramenta errada em cima do machucado** piora ali mesmo: corta/esfola onde você arrasta, sangra, inflama mais, custa 10 moedas e cria etapas extras (limpar o sangue e curativo).
+- **Animações**: inflamação latejando, caroço estufa antes de estourar, paciente recua de dor e treme com dor alta, sangue empoça na pele plana e só escorre onde é inclinado.
+
 ### Sensações (v0.8)
 
 - **Vibração** com força variável: cresce enquanto espreme/puxa, pulso seco a cada "nhec" do alicate, forte quando dói ou estoura.

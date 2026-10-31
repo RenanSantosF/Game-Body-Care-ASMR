@@ -15,10 +15,14 @@ uniform vec3 sss_color : source_color = vec3(0.95, 0.3, 0.2);
 uniform sampler2D paint : source_color, filter_linear, repeat_disable;
 uniform vec4 paint_rect = vec4(-3.0, -1.5, 6.0, 3.0);
 uniform vec2 paint_texel = vec2(0.0005, 0.001);
+// cabelo: o couro cabeludo fica tingido onde há cabelo (quantidade no canal G da cor do vértice)
+uniform float hair_on = 0.0;
+uniform vec3 hair_col : source_color = vec3(0.2, 0.13, 0.08);
 
 varying vec3 wp;
 varying vec3 wn;
 varying float vao;
+varying float vhair;
 
 float detail(vec2 p) {
 	// poros: pontinhos afundados
@@ -44,6 +48,7 @@ void vertex() {
 	wn = n;
 	wp = w + d0;
 	vao = COLOR.r;
+	vhair = hair_on > 0.5 ? COLOR.g : 0.0;
 }
 
 void fragment() {
@@ -56,6 +61,11 @@ void fragment() {
 	c = mix(c, c * vec3(0.88, 0.92, 1.05), vein * 0.1 * smoothstep(0.6, 0.95, vao));
 	c = mix(skin_deep, c, smoothstep(0.3, 0.95, vao));
 	c *= mix(0.55, 1.0, smoothstep(0.15, 0.9, vao));
+	// cabelo denso visto de cima: tom do cabelo com fios finos riscados
+	if (vhair > 0.01) {
+		float strands = 0.75 + 0.25 * vnoise(vec2(p.x * 25.0 + p.y * 9.0, p.y * 260.0 + p.x * 40.0));
+		c = mix(c, hair_col * strands, vhair * 0.88);
+	}
 
 	// relevo de detalhe -> normal
 	float e = 0.0015;

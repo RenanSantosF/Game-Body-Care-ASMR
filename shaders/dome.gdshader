@@ -43,6 +43,10 @@ void vertex() {
 	float co = smoothstep(0.55 - open_amt * 0.4, 0.95, cut_a(v));
 	v -= NORMAL * co * 0.35;
 	v *= 1.0 + swell * 0.3;
+	// lateja devagar (inflamação viva); para quando murcha
+	if (kind != 3) {
+		v.y *= 1.0 + 0.045 * sin(TIME * 2.3 + seed) * (1.0 - deflate) * smoothstep(0.0, 0.5, v.y);
+	}
 	VERTEX = v;
 	vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	VERTEX += inverse(mat3(MODEL_MATRIX)) * skin_deform(w);

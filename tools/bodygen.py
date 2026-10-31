@@ -138,6 +138,76 @@ def foot_sdf(p):
         d = smin(d, capsule(p, [-0.5, 0.3, base[2] * 0.3], [base[0] - 0.2, 0.15, base[2]], 0.025), 0.07)
     return d
 
+# ---------------------------------------------------------------- COSTAS
+# Paciente de bruços: costas vistas de cima, pescoço em +X, cintura em -X.
+
+def smax(a, b, k):
+    return -smin(-a, -b, k)
+
+def back_sdf(p):
+    d = ellipsoid(p, [-0.4, -0.05, 0.0], [2.6, 0.5, 1.12])
+    # musculatura ao lado da coluna (deixa o sulco da coluna no meio)
+    for side in (-1, 1):
+        d = smin(d, ellipsoid(p, [-0.5, 0.33, side * 0.24], [1.9, 0.14, 0.2]), 0.18)
+        # escápulas
+        d = smin(d, ellipsoid(p, [0.72, 0.31, side * 0.55], [0.42, 0.11, 0.3]), 0.2)
+        # ombros arredondando para fora
+        d = smin(d, ellipsoid(p, [1.05, 0.05, side * 0.95], [0.45, 0.33, 0.38]), 0.25)
+        # costelas de leve nas laterais
+        for k in range(4):
+            d = smin(d, capsule(p, [-0.2 - k * 0.32, 0.22, side * 0.62], [-0.35 - k * 0.32, 0.08, side * 1.02], 0.05), 0.12)
+    # sulco da coluna + vértebras saltadas de leve
+    d = smax(d, -capsule(p, [-2.2, 0.47, 0.0], [1.1, 0.46, 0.0], 0.07), 0.08)
+    for k in range(9):
+        x = 0.95 - k * 0.3
+        d = smin(d, ellipsoid(p, [x, 0.36, 0.0], [0.07, 0.05, 0.06]), 0.06)
+    # pescoço
+    d = smin(d, chain(p, [[1.0, 0.12, 0.0], [1.7, 0.14, 0.0], [2.6, 0.15, 0.0]], [0.4, 0.33, 0.33], ys=1.3), 0.3)
+    return d
+
+# ---------------------------------------------------------------- ROSTO
+# Paciente de barriga para cima: rosto visto de cima, testa em +X, queixo em -X.
+
+def face_sdf(p):
+    d = ellipsoid(p, [0.2, 0.0, 0.0], [1.15, 0.6, 0.86])
+    # mandíbula mais estreita
+    d = smin(d, ellipsoid(p, [-0.55, -0.02, 0.0], [0.72, 0.5, 0.7]), 0.3)
+    # bochechas
+    for side in (-1, 1):
+        d = smin(d, ellipsoid(p, [-0.15, 0.36, side * 0.48], [0.36, 0.24, 0.3]), 0.2)
+        # arco das sobrancelhas
+        d = smin(d, ellipsoid(p, [0.44, 0.5, side * 0.34], [0.12, 0.09, 0.27]), 0.12)
+        # olho: cavidade + pálpebra fechada
+        d = smax(d, -ellipsoid(p, [0.22, 0.66, side * 0.35], [0.15, 0.13, 0.22]), 0.08)
+        d = smin(d, ellipsoid(p, [0.22, 0.5, side * 0.35], [0.12, 0.08, 0.19]), 0.05)
+        # orelhas
+        d = smin(d, ellipsoid(p, [0.12, 0.02, side * 0.88], [0.24, 0.14, 0.08]), 0.08)
+        # asas do nariz
+        d = smin(d, ellipsoid(p, [-0.3, 0.6, side * 0.14], [0.09, 0.08, 0.08]), 0.06)
+    # nariz: dorso + ponta
+    d = smin(d, capsule(p, [0.3, 0.55, 0.0], [-0.22, 0.75, 0.0], 0.075, 0.11), 0.1)
+    d = smin(d, ellipsoid(p, [-0.28, 0.72, 0.0], [0.13, 0.11, 0.12]), 0.07)
+    # lábios
+    d = smin(d, ellipsoid(p, [-0.66, 0.55, 0.0], [0.075, 0.07, 0.25]), 0.06)
+    d = smin(d, ellipsoid(p, [-0.81, 0.53, 0.0], [0.08, 0.07, 0.22]), 0.06)
+    d = smax(d, -capsule(p, [-0.735, 0.62, -0.22], [-0.735, 0.62, 0.22], 0.014), 0.02)
+    # queixo
+    d = smin(d, ellipsoid(p, [-1.02, 0.38, 0.0], [0.2, 0.2, 0.3]), 0.15)
+    # pescoço
+    d = smin(d, chain(p, [[-0.9, -0.1, 0.0], [-1.8, -0.12, 0.0], [-2.9, -0.12, 0.0]], [0.5, 0.48, 0.5], ys=1.2), 0.3)
+    return d
+
+# ---------------------------------------------------------------- CABEÇA
+# Topo da cabeça visto de cima (paciente sentado com a cabeça abaixada): couro cabeludo.
+
+def head_sdf(p):
+    d = ellipsoid(p, [0.05, 0.0, 0.0], [1.05, 0.7, 0.86])
+    d = smin(d, ellipsoid(p, [-0.45, -0.05, 0.0], [0.75, 0.62, 0.8]), 0.3)
+    for side in (-1, 1):
+        d = smin(d, ellipsoid(p, [-0.2, -0.05, side * 0.86], [0.24, 0.14, 0.08]), 0.08)
+    d = smin(d, chain(p, [[-0.8, -0.2, 0.0], [-1.8, -0.22, 0.0], [-2.9, -0.22, 0.0]], [0.42, 0.42, 0.45], ys=1.2), 0.3)
+    return d
+
 # ---------------------------------------------------------------- malha
 
 def build(sdf_fn, bmin, bmax, step, name, tips_key):
@@ -213,6 +283,15 @@ if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     step = float(sys.argv[1]) if len(sys.argv) > 1 else 0.022
     hand_sdf(np.zeros((1, 3)))
-    build(hand_sdf, [-2.9, -0.3, -1.35], [2.05, 0.36, 0.9], step, "hand", HAND_FINGERS)
-    foot_sdf(np.zeros((1, 3)))
-    build(foot_sdf, [-2.9, -0.36, -0.85], [1.45, 0.66, 0.85], step, "foot", FOOT_TOES)
+    if "hand" in (sys.argv[2].split(",") if len(sys.argv) > 2 else ["hand"]):
+      build(hand_sdf, [-2.9, -0.3, -1.35], [2.05, 0.36, 0.9], step, "hand", HAND_FINGERS)
+    only = sys.argv[2].split(",") if len(sys.argv) > 2 else ["hand", "foot", "back", "face", "head"]
+    if "foot" in only:
+        foot_sdf(np.zeros((1, 3)))
+        build(foot_sdf, [-2.9, -0.36, -0.85], [1.45, 0.66, 0.85], step, "foot", FOOT_TOES)
+    if "back" in only:
+        build(back_sdf, [-2.9, -0.4, -1.4], [2.1, 0.62, 1.4], step * 1.32, "back", [])
+    if "face" in only:
+        build(face_sdf, [-2.9, -0.4, -1.1], [1.45, 0.92, 1.1], step * 1.0, "face", [])
+    if "head" in only:
+        build(head_sdf, [-2.9, -0.45, -1.05], [1.2, 0.75, 1.05], step, "head", [])

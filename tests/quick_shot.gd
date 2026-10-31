@@ -9,7 +9,9 @@ func _ready() -> void:
 	GameData.current_level = 12
 	var game = load("res://scenes/game.tscn").instantiate()
 	add_child(game)
-	await get_tree().create_timer(0.5).timeout
+	await get_tree().create_timer(3.0).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(out + "/00_wide.png")
 	var i := 0
 	for p in game.problems:
 		i += 1

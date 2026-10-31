@@ -46,7 +46,7 @@ const PROBLEMS := {
 		"stages": [["pano", Mech.RUB, 0.8]]},
 	"cravos":    {"name": "Cravos", "tier": 1, "size": 0.12, "w": 3, "where": "dorso",
 		"stages": [["espremedor", Mech.PICK, 1.0], ["pano", Mech.RUB, 0.7]]},
-	"pelos":     {"name": "Pelos crescidos", "tier": 1, "size": 0.24, "w": 4, "where": "dorso",
+	"pelos":     {"name": "Pelos crescidos", "tier": 1, "size": 0.24, "w": 4, "where": "dorso", "parts": ["mao", "pe", "costas"],
 		"stages": [["lamina", Mech.SWEEP, 1.0]]},
 	"pelo_encravado": {"name": "Pelo encravado", "tier": 2, "size": 0.06, "w": 3, "where": "pele",
 		"stages": [["agulha", Mech.HOLD, 0.4], ["pinca", Mech.PULL, 300.0], ["algodao", Mech.RUB, 0.7]]},
@@ -87,6 +87,21 @@ const PROBLEMS := {
 		"stages": [["pinca", Mech.PICK, 1.0], ["algodao", Mech.RUB, 0.7]]},
 	"unha_roxa": {"name": "Unha roxa (sangue preso)", "tier": 2, "size": 0.1, "w": 2, "where": "unha",
 		"stages": [["agulha", Mech.HOLD, 1.0], ["algodao", Mech.RUB, 0.75]]},
+	# --- maiores e mais feios (v0.9) + partes novas do corpo
+	"carbunculo": {"name": "Carbúnculo (furúnculo com várias cabeças)", "tier": 3, "size": 0.24, "w": 3, "where": "dorso",
+		"stages": [["bisturi", Mech.CUT, 1.0], ["espremedor", Mech.HOLD, 3.4], ["algodao", Mech.RUB, 0.75], ["curativo", Mech.TAP, 1.0]]},
+	"acne_costas": {"name": "Acne inflamada", "tier": 2, "size": 0.22, "w": 4, "where": "dorso", "parts": ["costas", "rosto", "mao"],
+		"stages": [["espremedor", Mech.PICK, 1.0], ["algodao", Mech.RUB, 0.75]]},
+	"queimadura": {"name": "Queimadura com bolhas", "tier": 2, "size": 0.2, "w": 3, "where": "dorso",
+		"stages": [["agulha", Mech.HOLD, 0.9], ["pinca", Mech.PICK, 1.0], ["pomada", Mech.RUB, 600.0], ["curativo", Mech.TAP, 1.0]]},
+	"pontos":    {"name": "Pontos infeccionados", "tier": 2, "size": 0.17, "w": 3, "where": "dorso",
+		"stages": [["pinca", Mech.PICK, 1.0], ["algodao", Mech.RUB, 0.75], ["curativo", Mech.TAP, 1.0]]},
+	"piolhos":   {"name": "Piolhos e lêndeas", "tier": 2, "size": 0.22, "w": 5, "where": "cabelo",
+		"stages": [["pinca", Mech.PICK, 1.0], ["pano", Mech.RUB, 0.75]]},
+	"caspa":     {"name": "Caspa grossa (seborreia)", "tier": 1, "size": 0.2, "w": 5, "where": "cabelo",
+		"stages": [["pano", Mech.RUB, 0.8], ["algodao", Mech.RUB, 400.0]]},
+	"barba":     {"name": "Barba enorme", "tier": 1, "size": 0.3, "w": 5, "where": "barba",
+		"stages": [["lamina", Mech.SWEEP, 1.0]]},
 	# criado quando o jogador machuca o paciente
 	"machucado": {"name": "Machucado", "tier": 99, "size": 0.06, "w": 0, "where": "pele",
 		"stages": [["algodao", Mech.RUB, 0.7], ["curativo", Mech.TAP, 1.0]]},
@@ -99,7 +114,7 @@ const NAMES := ["Seu Juca", "Dona Cida", "Tio Zé", "Bruna", "Kevin", "Dona Neid
 	"Lu", "Pedrinho", "Vó Dalva", "Rafa", "Tia Sônia", "Jéssica", "Seu Arnaldo", "Diego",
 	"Valdirene", "Cleitinho", "Dona Zuleide", "Thiago", "Seu Bené", "Paty", "Gilmar"]
 
-const PART_NAMES := {"mao": "Mão", "pe": "Pé"}
+const PART_NAMES := {"mao": "Mão", "pe": "Pé", "costas": "Costas", "rosto": "Rosto", "cabeca": "Cabeça"}
 
 const THANKS := ["Muito obrigado, doutor!", "Nem acredito, tô novo!", "Que alívio!!",
 	"Vou voltar sempre!", "Minha mãe não vai me reconhecer!", "Brilhando igual pão de queijo!",

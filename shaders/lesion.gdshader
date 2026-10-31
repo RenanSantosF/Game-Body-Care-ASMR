@@ -142,6 +142,8 @@ void fragment() {
 		a = (1.0 - smoothstep(0.1, 1.0, r + e)) * 0.85;
 		col = mix(skin, red, 0.6 + 0.25 * (1.0 - r));
 		col = mix(col, col * vec3(0.95, 0.75, 0.8), smoothstep(0.4, 0.0, r) * 0.3);
+		// pulsação quente da inflamação
+		a *= 1.0 + 0.09 * sin(TIME * 2.3 + seed) * (1.0 - heal);
 		gloss = 0.35;
 	} else if (kind == DIRT) {
 		float sh = blob(uv, seed, 1.0);

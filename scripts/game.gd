@@ -63,6 +63,8 @@ var tool_touch := -1
 var trig_touch := -1
 var triggering := false
 var pus_str: PusString = null
+var wrong_p: Problem = null
+var stroke_locked := false       # etapa terminou durante o arrasto: só começa outro problema após soltar o dedo      # problema que o jogador está estragando com a ferramenta errada
 var buzz_t := 0.0
 var cam_gesture := false
 var pinch_d0 := 1.0
@@ -114,6 +116,11 @@ func _ready() -> void:
 		if sp.is_empty():
 			continue
 		_spawn(data["problems"][i], sp, prng)
+	# cabelo/sobrancelhas (rosto e cabeça), afastado de cada problema
+	var excl := []
+	for p in problems:
+		excl.append([p.center(), p.size * 1.25 + 0.05])
+	body.build_hair(data["look"]["hair"], excl)
 
 	cam = Camera3D.new()
 	cam.fov = 40.0
@@ -144,6 +151,9 @@ func _spawn(id: String, sp: Dictionary, prng: RandomNumberGenerator) -> Problem:
 	p.setup(id, body, prng, extra)
 	p.stage_done.connect(_on_stage_done)
 	p.popped.connect(_on_popped)
+	p.extra_stages.connect(func(_q, c):
+		total_stages += c
+		_update_progress())
 	problems.append(p)
 	total_stages += Defs.stage_count(id)
 	return p
@@ -433,6 +443,10 @@ func _process(delta: float) -> void:
 	if not input_ok:
 		return
 	pain = maxf(0.0, pain - delta * 1.6)
+	# com muita dor o paciente treme
+	if body and pain > 55.0 and not (_flinch_tw and _flinch_tw.is_running()):
+		var k := (pain - 55.0) / 45.0 * 0.0035
+		body.position = Vector3(randf_range(-k, k), 0.0, randf_range(-k, k))
 	_update_pain()
 	if pressing and active and (active.done or active.tool() != selected):
 		active = null
@@ -506,6 +520,24 @@ func _end_ooze() -> void:
 		Sfx.play("drip", 0.2, -8)
 	pus_str = null
 
+var _flinch_tw: Tween
+## O paciente recua de dor (puxa a mão/pé um pouquinho e volta)
+func _flinch(amount: float) -> void:
+	if body == null or amount < 3.0:
+		return
+	if _flinch_tw and _flinch_tw.is_valid():
+		_flinch_tw.kill()
+	var k := clampf(amount / 16.0, 0.3, 1.0)
+	var away := Vector3(-0.035, 0.012, randf_range(-0.015, 0.015)) * k
+	_flinch_tw = create_tween()
+	_flinch_tw.tween_property(body, "position", away, 0.07).set_ease(Tween.EASE_OUT)
+	_flinch_tw.tween_property(body, "position", away * 0.35, 0.12)
+	_flinch_tw.tween_property(body, "position", Vector3.ZERO, 0.35).set_trans(Tween.TRANS_SINE)
+
+func _update_progress() -> void:
+	if progress_bar:
+		progress_bar.value = 100.0 * done_stages / maxi(1, total_stages)
+
 func _update_pain() -> void:
 	max_pain = maxf(max_pain, pain)
 	if pain_bar:
@@ -520,6 +552,7 @@ func _update_pain() -> void:
 
 func _hurt(amount: float, lines: Array, min_gap := 0.0) -> void:
 	pain = minf(100.0, pain + amount)
+	_flinch(amount)
 	if pain >= 100.0 and not finished:
 		_update_pain()
 		return
@@ -544,7 +577,9 @@ func _dirt_mult(p: Problem) -> float:
 
 func _dirty_pain(p: Problem, delta: float) -> void:
 	if _dirt_mult(p) < 1.0:
-		pain = minf(100.0, pain + delta * 6.0)
+		# arde e avisa, mas sozinho não faz perder a fase
+		if pain < 70.0:
+			pain = minf(70.0, pain + delta * 6.0)
 		if now - last_dirty > 3.0:
 			last_dirty = now
 			_say(Defs.OUCH_DIRTY.pick_random())
@@ -817,6 +852,7 @@ func _pick_problem(pos: Vector2, mult := 1.25) -> Problem:
 
 func _press(pos: Vector2) -> void:
 	pressing = true
+	stroke_locked = false
 	last_pos = pos
 	frame_pull = 0.0
 	var p := _pick_problem(pos)
@@ -870,6 +906,9 @@ func _start_on(p: Problem, pos: Vector2) -> void:
 func _paint_cut(p: Problem, pos: Vector2) -> void:
 	var hit := _ray_body(pos)
 	var dh := p.ray_cut_host(cam.project_ray_origin(pos), cam.project_ray_normal(pos))
+	# a interseção com o caroço pode escapar em raios rasantes: confia na pele se ficar longe
+	if not dh.is_empty() and not hit.is_empty() and Vector2(dh[0].x - hit[0].x, dh[0].z - hit[0].z).length() > p.size * 0.9:
+		dh = []
 	var wpos: Vector3
 	if not dh.is_empty():
 		wpos = dh[0]
@@ -879,6 +918,15 @@ func _paint_cut(p: Problem, pos: Vector2) -> void:
 		wpos = o + d * ((p.center().y - o.y) / d.y)
 	else:
 		wpos = hit[0]
+	# cortando a linha de OUTRO machucado que pede a mesma ferramenta: passa a cortar aquele
+	if p.path_dist(wpos) > p.size * 0.6:
+		for q in problems:
+			if q != p and not q.done and q.tool() == selected and q.has_paint_cut() and q.path_dist(wpos) < q.size * 0.6:
+				active = q
+				p.end_stroke()
+				p = q
+				stroke_first = true
+				break
 	var md := p.cut_stroke(wpos, stroke_first)
 	stroke_first = false
 	Sfx.play_throttled("cut", 0.09, 0.25, -6)
@@ -970,7 +1018,7 @@ func _drag(pos: Vector2) -> void:
 	var rel := pos.distance_to(last_pos)
 	var prev_pos := last_pos
 	last_pos = pos
-	if active == null and selected != "":
+	if active == null and selected != "" and not stroke_locked:
 		var p := _pick_problem(pos)
 		if p and p.tool() == selected:
 			_start_on(p, pos)
@@ -978,6 +1026,16 @@ func _drag(pos: Vector2) -> void:
 				_act_start(p)
 	if not triggering:
 		return
+	# arrastando a ferramenta errada por cima: estraga mais e dói
+	if wrong_p and is_instance_valid(wrong_p) and not wrong_p.done and selected in HARMFUL:
+		var wh := _ray_body(pos)
+		if not wh.is_empty() and wh[0].distance_to(wrong_p.center()) < wrong_p.size * 1.7:
+			wrong_p.aggravate(wh[0], Defs.TOOLS[selected]["sharp"], false)
+			pain = minf(100.0, pain + rel * 0.05)
+			Sfx.play_throttled("cut" if Defs.TOOLS[selected]["sharp"] else "scrub", 0.1, 0.3, -6)
+			if now - last_mistake > 1.2:
+				last_mistake = now
+				_hurt(4.0, Defs.OUCH)
 	if skin_cut and is_instance_valid(skin_cut) and pressing:
 		var hit := _ray_body(pos)
 		if not hit.is_empty() and hit[0].distance_to(skin_cut.center()) < skin_cut.size * 2.0:
@@ -1034,6 +1092,8 @@ func _release() -> void:
 		active.end_stroke()
 	active = null
 	skin_cut = null
+	wrong_p = null
+	stroke_locked = false
 	_update_labels()
 
 func _sweep_r() -> float:
@@ -1076,23 +1136,16 @@ func _wrong(p: Problem, pos: Vector2) -> void:
 	_hurt(16.0 if sharp else 9.0, Defs.OUCH)
 	_float_text("AI!", cam.unproject_position(p.center()) + Vector2(0, -50), UIKit.RED, 46)
 	_toast("Ferramenta errada! Piorou!", UIKit.RED, 40, 1.0)
-	# fica pior: inflama mais / sangra
-	if sharp:
-		# o corte errado abre um machucado ao lado do problema
-		var dirv := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
-		var wp := p.center() + dirv * (p.size + 0.06)
-		var sp := body.surface(wp.x, wp.z)
-		if not sp.is_empty():
-			var w := _make_wound(sp[0], sp[1])
-			if w:
-				# um risco curto onde a ferramenta escorregou
-				var side := dirv.cross(Vector3.UP)
-				for k in 6:
-					var q: Vector3 = sp[0] + side * (k - 2.5) * 0.008
-					var s2 := body.surface(q.x, q.z)
-					if not s2.is_empty():
-						w.wound_stroke(s2[0], k == 0)
-	MeshGen.burst(body, p.center(), Problem.BLOOD_C if sharp else Color(1, 0.5, 0.5), 6, 0.6, 0.008, Vector3.UP, 50.0)
+	# fica pior ALI MESMO: corta/esfola o próprio machucado, sangra, inflama
+	# e o jogador continua estragando enquanto arrasta a ferramenta errada por cima
+	var hit := _ray_body(pos)
+	var wp: Vector3 = hit[0] if not hit.is_empty() else p.center()
+	wrong_p = p
+	if p.aggravate(wp, sharp, true):
+		earned -= 10
+		_float_text("-10", cam.unproject_position(p.center()) + Vector2(60, -10), UIKit.RED, 38)
+	MeshGen.burst(body, wp, Problem.BLOOD_C if sharp else Color(1, 0.5, 0.5), 6, 0.6, 0.008, Vector3.UP, 50.0)
+	body.spawn_drops(wp + Vector3.UP * 0.01, Vector3.UP, 3, 3 if sharp else 1, 0.5, 0.007, 0.5)
 	if level <= 3:
 		hint_until = maxf(hint_until, now + 4.0)
 	_update_labels()
@@ -1102,6 +1155,8 @@ func _wrong(p: Problem, pos: Vector2) -> void:
 func _on_stage_done(p: Problem, fin: bool) -> void:
 	if p == active:
 		active = null
+	if pressing:
+		stroke_locked = true
 	done_stages += 1
 	combo = combo + 1 if now - last_stage_t < 4.0 else 1
 	last_stage_t = now
@@ -1119,7 +1174,7 @@ func _on_stage_done(p: Problem, fin: bool) -> void:
 		_toast("COMBO x%d!" % combo, UIKit.PINK, 48, 0.8)
 	Sfx.play("coin", 0.05, -8)
 	GameData.vibrate(25)
-	progress_bar.value = 100.0 * done_stages / total_stages
+	_update_progress()
 	for q in problems:
 		q.show_guide(q == focus and q.tool() == selected)
 	_update_labels()
@@ -1219,7 +1274,7 @@ func _finish() -> void:
 	elif max_pain >= 40.0 or mistakes > 0:
 		stars = 2
 	var base := 40 + 8 * level
-	var reward := int(base * [0.6, 0.8, 1.0][stars - 1]) + earned
+	var reward := maxi(10, int(base * [0.6, 0.8, 1.0][stars - 1]) + earned)
 	if data["extreme"]:
 		reward = reward * 3 + 150
 	GameData.complete_level(level, stars, reward)
@@ -1568,7 +1623,7 @@ func _update_labels() -> void:
 		return
 	var p := _target()
 	if wide:
-		lbl_problem.text = "Afaste/junte dois dedos para dar zoom"
+		lbl_problem.text = "Escolha uma ferramenta e mire num problema"
 		lbl_hint.text = ""
 		return
 	if p == null:

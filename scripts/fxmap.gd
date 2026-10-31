@@ -17,6 +17,7 @@ var cut_pts: Array = []      # pontos do corte em pixels (para sangrar)
 var drips: Array = []        # [pos_px, dir_px, vida]
 var bleed := 0.0             # intensidade do sangramento
 var down := Vector2(0, 1)    # direção "morro abaixo" em pixels
+var slope := 0.0             # 0 = pele plana (sangue empoça), 1 = bem inclinada (escorre)
 var _last := Vector2(-999, -999)
 var wiped := 0.0             # algodão pressionando estanca o sangue
 
@@ -121,9 +122,14 @@ func step(dt: float) -> void:
 	_t += dt
 	if bleed > 0.01 and not cut_pts.is_empty():
 		for i in 3:
+			# gotinhas brotando ao longo do corte (bolinhas que crescem e se juntam)
 			var q: Vector2 = cut_pts[randi() % cut_pts.size()]
-			_stamp(q + Vector2(randf_range(-1.5, 1.5), randf_range(-1.5, 1.5)), randf_range(2.0, 4.5), 1, 0.16 * bleed, 1)
-		if randf() < dt * 1.6 * bleed and drips.size() < 4:
+			_stamp(q + Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)), randf_range(1.6, 3.4), 1, 0.16 * bleed, 1)
+		# em pele plana o sangue empoça em volta do corte em vez de escorrer
+		if slope < 0.25 and randf() < dt * 2.0 * bleed:
+			var q3: Vector2 = cut_pts[randi() % cut_pts.size()]
+			_stamp(q3, randf_range(4.0, 7.0), 1, 0.08 * bleed, 1)
+		if slope >= 0.25 and randf() < dt * 1.6 * bleed * slope and drips.size() < 4:
 			var q2: Vector2 = cut_pts[randi() % cut_pts.size()]
 			drips.append([q2, (down + Vector2(randf_range(-0.4, 0.4), randf_range(-0.4, 0.4))).normalized(), randf_range(6.0, 16.0)])
 		wiped = maxf(0.0, wiped - dt)

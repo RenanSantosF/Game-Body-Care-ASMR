@@ -3,7 +3,7 @@ extends SceneTree
 ## godot --headless --path . -s tools/convert_body.gd
 
 func _init() -> void:
-	for name in ["hand", "foot"]:
+	for name in ["hand", "foot", "back", "face", "head"]:
 		var f := FileAccess.open("res://assets/body/%s.json" % name, FileAccess.READ)
 		if f == null:
 			print("faltando ", name)

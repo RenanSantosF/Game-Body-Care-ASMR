@@ -2,7 +2,25 @@ class_name LevelGen
 extends RefCounted
 ## Gera fases de forma determinística a partir do número da fase.
 
-const PARTS := ["mao", "pe"]
+## Ordem das partes do corpo ao longo das fases (repete a cada 10)
+## (fases 5, 15... são chefes nas costas; 10, 20... no pé — áreas grandes)
+const PARTS := ["mao", "pe", "costas", "rosto", "costas", "cabeca", "mao", "pe", "rosto", "pe"]
+## Na cabeça (cheia de cabelo) só aparecem estes, além dos de cabelo
+const SCALP_OK := ["espinha", "cisto", "crosta", "carrapato", "furunculo", "pelo_encravado"]
+
+static func part_ok(id: String, part: String) -> bool:
+	var d: Dictionary = Defs.PROBLEMS[id]
+	var w: String = d["where"]
+	if d.has("parts") and not part in d["parts"]:
+		return false
+	match w:
+		"unha": return part == "mao" or part == "pe"
+		"calo": return part == "pe"
+		"barba": return part == "rosto"
+		"cabelo": return part == "cabeca"
+	if part == "cabeca":
+		return id in SCALP_OK
+	return true
 
 static func is_extreme(level: int) -> bool:
 	return level % 5 == 0
@@ -37,12 +55,12 @@ static func _make(level: int, avoid_repeat: bool) -> Dictionary:
 	var pool := []
 	for id in Defs.PROBLEMS:
 		var d: Dictionary = Defs.PROBLEMS[id]
-		if d["tier"] <= max_tier and Defs.problem_available(id, level):
-			if d["where"] == "calo" and part != "pe":
-				continue
+		if d["tier"] <= max_tier and Defs.problem_available(id, level) and part_ok(id, part):
 			pool.append(id)
 
 	var count := clampi(2 + level / 2, 2, 7)
+	if part == "cabeca":
+		count = mini(count, 5)
 	if extreme:
 		# paciente chefe: um monte de problemas misturados
 		count = clampi(9 + level / 10, 10, 12)
@@ -57,6 +75,7 @@ static func _make(level: int, avoid_repeat: bool) -> Dictionary:
 				newest = tl
 		if newest != "":
 			var with_new := pool.filter(func(id): return Defs.tools_of(id).has(newest))
+			with_new = with_new.filter(func(id): return part_ok(id, part))
 			if with_new.size() > 0:
 				chosen.append(with_new[rng.randi() % with_new.size()])
 	var nails := 0
@@ -124,8 +143,9 @@ static func place(body: Body, ids: Array, rng: RandomNumberGenerator) -> Array:
 	var used := []        # [pos, raio]
 	var used_nails := []
 	var hand := body.part == "mao"
-	var dorso := Rect2(-0.35, -0.36, 0.78, 0.7) if hand else Rect2(-0.85, -0.3, 1.35, 0.6)
-	var arm := Rect2(-1.55, -0.2, 1.0, 0.4) if hand else Rect2(-1.75, -0.2, 0.75, 0.4)
+	var dorso := body.region("dorso")
+	var arm := body.region("braco")
+	var has_digits := body.digits.size() > 0
 	for id in ids:
 		var d: Dictionary = Defs.PROBLEMS[id]
 		var r: float = d["size"]
@@ -154,9 +174,16 @@ static func place(body: Body, ids: Array, rng: RandomNumberGenerator) -> Array:
 				var fwd := Vector3(1, 0, 0)
 				var kind := where
 				if kind == "pele":
-					kind = ["dorso", "dorso", "braco", "dedo"][rng.randi() % 4]
+					var opts := ["dorso", "dorso", "braco"]
+					if has_digits:
+						opts.append("dedo")
+					if body.has_region("barba"):
+						opts.append("barba")
+					kind = opts[rng.randi() % opts.size()]
 					if r > 0.1:
 						kind = "dorso" if rng.randf() < 0.7 else "braco"
+				if (kind == "dedo" and not has_digits) or (kind == "braco" and not body.has_region("braco")):
+					kind = "dorso"
 				if kind == "calo":
 					if rng.randf() < 0.6:
 						var di := rng.randi() % body.digits.size()
@@ -173,10 +200,13 @@ static func place(body: Body, ids: Array, rng: RandomNumberGenerator) -> Array:
 					fwd = (q3 - q2).normalized()
 				elif kind == "braco":
 					p = Vector3(rng.randf_range(arm.position.x, arm.end.x), 0, rng.randf_range(arm.position.y, arm.end.y))
+				elif kind == "barba" or kind == "cabelo":
+					var rg := body.region(kind)
+					p = Vector3(rng.randf_range(rg.position.x, rg.end.x), 0, rng.randf_range(rg.position.y, rg.end.y))
 				else:
 					p = Vector3(rng.randf_range(dorso.position.x, dorso.end.x), 0, rng.randf_range(dorso.position.y, dorso.end.y))
 				var sp := body.surface(p.x, p.z)
-				if sp.is_empty():
+				if sp.is_empty() or body.avoid(p):
 					continue
 				var pos: Vector3 = sp[0]
 				var nrm: Vector3 = sp[1]

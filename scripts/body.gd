@@ -24,9 +24,37 @@ var wide_height := 4.6
 const PAINT_W := 1024
 const PAINT_H := 512
 
+const KEYS := {"mao": "hand", "pe": "foot", "costas": "back", "rosto": "face", "cabeca": "head"}
+
+## Áreas (x, z) onde cada tipo de lugar fica em cada parte do corpo
+const REGIONS := {
+	"mao": {"dorso": Rect2(-0.35, -0.36, 0.78, 0.7), "braco": Rect2(-1.55, -0.2, 1.0, 0.4)},
+	"pe": {"dorso": Rect2(-0.85, -0.3, 1.35, 0.6), "braco": Rect2(-1.75, -0.2, 0.75, 0.4)},
+	"costas": {"dorso": Rect2(-1.5, -0.78, 2.3, 1.56), "braco": Rect2(0.55, -1.0, 0.6, 2.0)},
+	"rosto": {"dorso": Rect2(-0.5, -0.68, 1.35, 1.36), "barba": Rect2(-1.18, -0.62, 0.72, 1.24), "braco": Rect2(-1.9, -0.32, 0.55, 0.64)},
+	"cabeca": {"cabelo": Rect2(-0.55, -0.5, 1.3, 1.0), "dorso": Rect2(-0.55, -0.5, 1.3, 1.0)},
+}
+## Lugares onde não se coloca problema (olhos, boca): [x, z, raio]
+const AVOID := {"rosto": [[0.22, 0.35, 0.2], [0.22, -0.35, 0.2], [-0.74, 0.0, 0.11], [-0.74, 0.15, 0.1], [-0.74, -0.15, 0.1]]}
+
+var hair_root: Node3D
+
+func region(kind: String) -> Rect2:
+	var r: Dictionary = REGIONS.get(part, REGIONS["mao"])
+	return r.get(kind, r["dorso"])
+
+func has_region(kind: String) -> bool:
+	return REGIONS.get(part, {}).has(kind)
+
+func avoid(p: Vector3) -> bool:
+	for a in AVOID.get(part, []):
+		if Vector2(p.x - a[0], p.z - a[1]).length() < a[2]:
+			return true
+	return false
+
 func build(p_part: String, skin: Color) -> void:
 	part = p_part
-	var key := "hand" if part == "mao" else "foot"
+	var key: String = KEYS.get(part, "hand")
 	mesh_inst = MeshInstance3D.new()
 	mesh_inst.mesh = load("res://assets/body/%s_mesh.res" % key)
 	add_child(mesh_inst)
@@ -44,7 +72,8 @@ func build(p_part: String, skin: Color) -> void:
 	skin_mat.set_shader_parameter("paint", paint_tex)
 	skin_mat.set_shader_parameter("paint_rect", Vector4(paint_rect.position.x, paint_rect.position.y, paint_rect.size.x, paint_rect.size.y))
 	mesh_inst.material_override = skin_mat
-	cam_center = Vector3(0.1, 0, -0.15) if part == "mao" else Vector3(-0.1, 0, 0)
+	cam_center = {"mao": Vector3(0.1, 0, -0.15), "pe": Vector3(-0.1, 0, 0), "costas": Vector3(-0.3, 0, 0),
+		"rosto": Vector3(-0.25, 0, 0), "cabeca": Vector3(-0.15, 0, 0)}.get(part, Vector3.ZERO)
 	_build_shadow()
 	_build_nails()
 	_build_towel()
@@ -70,6 +99,11 @@ func _build_towel() -> void:
 		add_child(mi)
 		mi.rotation.x = PI / 2
 		mi.position = Vector3(x0 + 0.42 - k * 0.62, -0.05 + k * 0.04, -0.15)
+		if part == "costas":
+			# lençol também cobrindo a nuca/cabeça
+			var top := mi.duplicate() as MeshInstance3D
+			add_child(top)
+			top.position = Vector3(1.95 + k * 0.62, 0.0 + k * 0.04, 0.0)
 
 ## Sombra de contato macia no travesseiro (silhueta borrada do mapa de altura)
 func _build_shadow() -> void:
@@ -294,3 +328,124 @@ func clean_stains(wpos: Vector3, brush_r: float) -> void:
 		mk.flush()
 		var m := st.material_override as ShaderMaterial
 		m.set_shader_parameter("wet", 1.0)
+
+# ------------------------------------------------------------- cabelo
+
+## Cabelo/sobrancelhas/cílios (rosto e cabeça) num único mesh por cor (leve para celular).
+## excl: [[pos, raio]] — áreas sem cabelo (onde há problema: o cabelo fica afastado)
+func build_hair(color: Color, excl: Array) -> void:
+	if part != "rosto" and part != "cabeca":
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 777
+	var a := []
+	var b := []
+	if part == "cabeca":
+		var crown := Vector2(0.4, 0.05)
+		for i in 2300:
+			var x := rng.randf_range(-0.85, 1.05)
+			var z := rng.randf_range(-0.85, 0.85)
+			var dir2 := (Vector2(x, z) - crown)
+			if dir2.length() < 0.02:
+				continue
+			dir2 = dir2.normalized().rotated(rng.randf_range(-0.25, 0.25))
+			var s := _strand(Vector3(x, 0, z), Vector3(dir2.x, 0, dir2.y), rng.randf_range(0.18, 0.32), rng.randf_range(0.0032, 0.0048), excl, 0.25, rng)
+			if s.size() > 0:
+				(a if rng.randf() < 0.65 else b).append(s)
+	else:
+		# linha do cabelo na testa, penteado para trás
+		for i in 800:
+			var x := rng.randf_range(0.92, 1.35)
+			var z := rng.randf_range(-0.8, 0.8)
+			if x < 0.92 + 0.2 * (z * z):
+				continue
+			var d3 := Vector3(1.0, 0, z * 0.6 + rng.randf_range(-0.2, 0.2))
+			var s2 := _strand(Vector3(x, 0, z), d3, rng.randf_range(0.18, 0.34), rng.randf_range(0.005, 0.0065), excl, 0.2, rng)
+			if s2.size() > 0:
+				(a if rng.randf() < 0.65 else b).append(s2)
+		# sobrancelhas e cílios (pálpebras fechadas)
+		for side in [-1.0, 1.0]:
+			for i in 80:
+				var t := rng.randf()
+				var z2: float = side * lerpf(0.13, 0.58, t)
+				var x2 := 0.43 + sin(t * PI) * 0.05 + rng.randf_range(-0.025, 0.025)
+				var s3 := _strand(Vector3(x2, 0, z2), Vector3(0.35, 0, side), rng.randf_range(0.03, 0.05), 0.0026, excl, 0.1, rng)
+				if s3.size() > 0:
+					a.append(s3)
+			for i in 34:
+				var t2 := rng.randf()
+				var z3: float = side * lerpf(0.2, 0.5, t2)
+				var x3 := 0.14 - sin(t2 * PI) * 0.025
+				var s4 := _strand(Vector3(x3, 0, z3), Vector3(-1.0, 0, side * 0.3), 0.04, 0.0017, excl, 0.6, rng)
+				if s4.size() > 0:
+					a.append(s4)
+	_tint_scalp(color, excl)
+	hair_root = Node3D.new()
+	add_child(hair_root)
+	for pair in [[a, color.darkened(0.08)], [b, color.lightened(0.12)]]:
+		if pair[0].is_empty():
+			continue
+		var mi := MeshInstance3D.new()
+		mi.mesh = MeshGen.tubes(pair[0], 3)
+		mi.material_override = MeshGen.std(pair[1], 0.5, 0.0, "scalp_hair_%s" % pair[1].to_html())
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		hair_root.add_child(mi)
+
+## Pinta (nas cores dos vértices) onde há cabelo, deixando a pele livre em volta dos problemas
+func _tint_scalp(color: Color, excl: Array) -> void:
+	var arr := mesh_inst.mesh.surface_get_arrays(0)
+	var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var ns: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+	var cs: PackedColorArray = arr[Mesh.ARRAY_COLOR]
+	for i in vs.size():
+		var v := vs[i]
+		var cov := 0.0
+		if part == "cabeca":
+			cov = smoothstep(0.15, 0.4, ns[i].y) * smoothstep(-0.95, -0.7, v.x)
+		else:
+			cov = smoothstep(0.95 + 0.2 * v.z * v.z, 1.12 + 0.2 * v.z * v.z, v.x) * smoothstep(0.1, 0.35, ns[i].y)
+		for e in excl:
+			var dd := Vector2(v.x - e[0].x, v.z - e[0].z).length()
+			cov *= smoothstep(e[1] * 0.85, e[1] + 0.05, dd)
+		cs[i] = Color(cs[i].r, cov, 0.0, 1.0)
+	arr[Mesh.ARRAY_COLOR] = cs
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	mesh_inst.mesh = m
+	skin_mat.set_shader_parameter("hair_on", 1.0)
+	skin_mat.set_shader_parameter("hair_col", color.darkened(0.15))
+
+## Um fio deitado na pele seguindo a superfície. Para ao entrar numa área excluída.
+func _strand(root: Vector3, dir: Vector3, L: float, r: float, excl: Array, lift: float, rng: RandomNumberGenerator) -> Array:
+	var sp := surface(root.x, root.z)
+	if sp.is_empty() or sp[1].y < 0.2:
+		return []
+	for e in excl:
+		if Vector2(root.x - e[0].x, root.z - e[0].z).length() < e[1]:
+			return []
+	var pts := PackedVector3Array()
+	var p := Vector3(root.x, 0, root.z)
+	var d := dir.normalized()
+	var curl := rng.randf_range(-3.0, 3.0)
+	var wave := rng.randf_range(0.5, 1.5) * (1.0 if rng.randf() < 0.5 else -1.0)
+	for k in 6:
+		var s := float(k) / 5.0
+		var q := surface(p.x, p.z)
+		if q.is_empty():
+			break
+		var blocked := false
+		for e in excl:
+			if Vector2(p.x - e[0].x, p.z - e[0].z).length() < e[1]:
+				blocked = true
+		if blocked and k > 1:
+			break
+		var nn: Vector3 = q[1]
+		pts.append(q[0] + nn * (r * 1.2 + 0.002 + lift * L * s * (1.0 - s) * 0.5))
+		d = d.rotated(Vector3.UP, curl * 0.06 + sin(k * 1.9) * wave * 0.22)
+		p += d * L / 5.0
+	if pts.size() < 3:
+		return []
+	var rr := PackedFloat32Array()
+	for k in pts.size():
+		rr.append(lerpf(r, r * 0.35, float(k) / (pts.size() - 1)))
+	return [pts, rr]
