@@ -62,6 +62,8 @@ var touches := {}
 var tool_touch := -1
 var trig_touch := -1
 var triggering := false
+var pus_str: PusString = null
+var buzz_t := 0.0
 var cam_gesture := false
 var pinch_d0 := 1.0
 var cam_d0 := 1.0
@@ -234,7 +236,12 @@ func _begin() -> void:
 	_say("Doutor, me ajuda!")
 	if data["extreme"]:
 		await get_tree().create_timer(0.9).timeout
-		_toast("CASO EXTREMO!", UIKit.RED, 64, 1.3)
+		_toast("PACIENTE CHEFE!", UIKit.RED, 64, 1.3)
+		shake = 0.03
+		GameData.vibrate(120, 1.0)
+		Sfx.play("squish")
+		await get_tree().create_timer(1.0).timeout
+		_toast("%d problemas! Recompensa x3" % problems.size(), Color("ffc43d"), 36, 1.4)
 	await get_tree().create_timer(1.0).timeout
 	_focus_on(_first_problem())
 	input_ok = true
@@ -430,18 +437,27 @@ func _process(delta: float) -> void:
 	if pressing and active and (active.done or active.tool() != selected):
 		active = null
 	var a := active
+	var oozing := false
+	buzz_t -= delta
 	if pressing and a:
 		a.speed = GameData.speed_mult(selected) * _dirt_mult(a)
 		match a.mech():
 			Defs.Mech.HOLD:
 				if triggering and _within(a, last_pos, 1.9):
+					var c := a.hold_color()
+					oozing = selected == "espremedor" and c.a > 0.0 and c != Problem.BLOOD_C
+					if oozing:
+						_ooze(a, delta)
 					fx_t -= delta
 					if fx_t <= 0.0:
 						fx_t = 0.1
-						var c := a.hold_color()
 						if c.a > 0.0:
-							MeshGen.burst(body, a.center() + a.global_basis.y * 0.04, c, 4, 0.7, 0.009, a.global_basis.y, 35.0)
-						Sfx.play_throttled("freeze" if selected == "spray" else "squish", 0.3, 0.2, -6)
+							MeshGen.burst(body, a.center() + a.global_basis.y * 0.04, c, 1 if oozing else 4, 0.7, 0.009, a.global_basis.y, 35.0)
+						Sfx.play_throttled("freeze" if selected == "spray" else ("ooze" if oozing else "squish"), 0.3 if not oozing else 0.45, 0.2, -6)
+					# vibração cresce conforme a pressão/progresso
+					if buzz_t <= 0.0 and selected != "spray":
+						buzz_t = lerpf(0.22, 0.09, a.progress)
+						GameData.vibrate(18, lerpf(0.25, 0.85, a.progress))
 					_dirty_pain(a, delta)
 					a.hold(delta)
 			Defs.Mech.PULL:
@@ -455,14 +471,40 @@ func _process(delta: float) -> void:
 					_hurt(3.0 * delta * 30.0, Defs.OUCH_FAST, 0.9)
 				if amt > 0.0:
 					Sfx.play_throttled("pull", 0.3, 0.3, -10)
+					if buzz_t <= 0.0:
+						buzz_t = 0.12
+						GameData.vibrate(12, clampf(0.2 + a.progress * 0.7, 0.2, 0.9))
 					_dirty_pain(a, delta)
 					a.pull(amt)
+	if not oozing and pus_str:
+		_end_ooze()
 	frame_pull = 0.0
 	_update_guide()
 	_update_coach(delta)
 	_update_tool_model()
 	_update_deform(delta)
 	_update_hint_glow()
+
+## Fio de pus saindo enquanto espreme
+func _ooze(a: Problem, delta: float) -> void:
+	if pus_str and (not is_instance_valid(pus_str) or pus_str.full()):
+		_end_ooze()
+	if pus_str == null:
+		pus_str = PusString.new()
+		body.add_child(pus_str)
+		var nrm := a.global_basis.y
+		var o := a.center() + nrm * a.size * 0.28 * (1.0 - a.progress * 0.5)
+		pus_str.global_position = o
+		var col := (Problem.PUS_C * a.pus_tint).lerp(Color(0.96, 0.92, 0.75), 0.35).darkened(0.08)
+		col.a = 1.0
+		pus_str.setup(body, o, nrm, col, clampf(a.size * 0.13, 0.006, 0.014))
+	pus_str.grow(delta * (0.05 + 0.08 * a.progress) * a.speed)
+
+func _end_ooze() -> void:
+	if pus_str and is_instance_valid(pus_str):
+		pus_str.detach()
+		Sfx.play("drip", 0.2, -8)
+	pus_str = null
 
 func _update_pain() -> void:
 	max_pain = maxf(max_pain, pain)
@@ -486,7 +528,7 @@ func _hurt(amount: float, lines: Array, min_gap := 0.0) -> void:
 		face.hurt()
 		_say(lines.pick_random())
 		Sfx.play("ouch", 0.15, -2)
-		GameData.vibrate(60)
+		GameData.vibrate(90, 1.0)
 		body_flinch()
 
 func body_flinch() -> void:
@@ -591,6 +633,10 @@ func _update_tool_model() -> void:
 	tool_model.global_position = tool_pos
 	var cb := cam.global_basis
 	var y := (Vector3.UP * 0.75 + cb.z * 0.35 + cb.x * 0.35 - Vector3(tool_vel.x, 0, tool_vel.z) * 0.15).normalized()
+	if selected == "pano":
+		# o pano deita sobre a pele, alinhado com a superfície
+		tool_model.drape_body = body
+		y = (hit[1] if not hit.is_empty() else Vector3.UP).lerp(Vector3.UP, 0.3).normalized()
 	var x := (cb.x - y * cb.x.dot(y)).normalized()
 	var z := x.cross(y)
 	var dist := cam.global_position.distance_to(pos)
@@ -704,6 +750,8 @@ func _trigger(on: bool) -> void:
 	_act_start(a)
 
 func _act_start(a: Problem) -> void:
+	if selected in ["agulha", "bisturi"]:
+		GameData.vibrate(22, 0.6)
 	match a.mech():
 		Defs.Mech.PICK:
 			if not a.pick(last_pos, 70.0, cam):
@@ -834,7 +882,7 @@ func _paint_cut(p: Problem, pos: Vector2) -> void:
 	var md := p.cut_stroke(wpos, stroke_first)
 	stroke_first = false
 	Sfx.play_throttled("cut", 0.09, 0.25, -6)
-	GameData.vibrate(8)
+	GameData.vibrate(10, 0.35)
 	if md > p.size * 1.0 and now - last_cut_hurt > 0.7:
 		last_cut_hurt = now
 		mistakes += 1
@@ -852,6 +900,7 @@ func _cut_start(p: Problem, pos: Vector2) -> void:
 	var d0 := cam.unproject_position(path[0]).distance_to(pos)
 	var d1 := cam.unproject_position(path[path.size() - 1]).distance_to(pos)
 	cut_rev = d1 < d0
+	p.cut_dir = -1.0 if cut_rev else 1.0
 	cut_idx = 0
 	off_path_t = 0.0
 
@@ -868,8 +917,14 @@ func _cut_drag(p: Problem, pos: Vector2, delta_t: float) -> void:
 	if sp.distance_to(pos) < 40.0:
 		cut_idx = nxt
 		p.set_cut(float(cut_idx) / (n - 1))
-		Sfx.play_throttled("cut", 0.12, 0.2, -4)
-		MeshGen.burst(body, path[pi], Problem.BLOOD_C, 2, 0.3, 0.006, Vector3.UP, 60.0)
+		if selected == "alicate" and p.id == "unha_suja":
+			# cada "nhec" do alicate: estalo seco, farelinho de unha e vibração
+			Sfx.play_throttled("clip", 0.08, 0.15, -2)
+			MeshGen.burst(body, path[pi], Color(0.96, 0.92, 0.8), 3, 0.35, 0.003, Vector3.UP, 70.0, -6.0, 0.6, false)
+			GameData.vibrate(16, 0.55)
+		else:
+			Sfx.play_throttled("cut", 0.12, 0.2, -4)
+			MeshGen.burst(body, path[pi], Problem.BLOOD_C, 2, 0.3, 0.006, Vector3.UP, 60.0)
 		off_path_t = 0.0
 	else:
 		var cur := (n - 1 - cut_idx) if cut_rev else cut_idx
@@ -904,6 +959,9 @@ func _do_rub(p: Problem, pos: Vector2, px: float) -> void:
 	# só mostra efeito/suja a ferramenta quando de fato está tirando algo
 	if gained > 0.0004:
 		_rub_fx(p)
+		if buzz_t <= 0.0:
+			buzz_t = 0.09
+			GameData.vibrate(6, 0.18)
 		if selected in ["pano", "algodao"]:
 			tool_model.soil(p.soil_color(), minf(0.05, gained * 2.0))
 	_dirty_pain(p, 0.02)
@@ -1083,7 +1141,7 @@ func _on_stage_done(p: Problem, fin: bool) -> void:
 
 func _on_popped(p: Problem, _c: Color) -> void:
 	shake = 0.025
-	GameData.vibrate(40)
+	GameData.vibrate(70, 1.0)
 	if randf() < 0.7:
 		var sp := cam.unproject_position(p.center())
 		_float_text(EXCLAIMS.pick_random(), sp + Vector2(randf_range(-60, 60), -80), Color("b6ff6b"), 42)
@@ -1163,7 +1221,7 @@ func _finish() -> void:
 	var base := 40 + 8 * level
 	var reward := int(base * [0.6, 0.8, 1.0][stars - 1]) + earned
 	if data["extreme"]:
-		reward *= 2
+		reward = reward * 3 + 150
 	GameData.complete_level(level, stars, reward)
 	_show_result(after, stars, reward)
 
@@ -1173,24 +1231,16 @@ func _show_result(after: Image, stars: int, reward: int) -> void:
 		c.visible = false
 	var m := UIKit.modal(hud_root)
 	var vb: VBoxContainer = m[1]
+	if data["extreme"]:
+		vb.add_child(UIKit.label("CHEFE DERROTADO!", 40, UIKit.RED))
 	vb.add_child(UIKit.label("ANTES  E  DEPOIS", 44, UIKit.PINK))
-	var row := UIKit.hbox(24)
-	vb.add_child(row)
-	for pair in [[before_img, "ANTES", UIKit.RED], [after, "DEPOIS", UIKit.GREEN]]:
-		var col := VBoxContainer.new()
-		col.add_theme_constant_override("separation", 4)
-		row.add_child(col)
-		var frame := PanelContainer.new()
-		frame.add_theme_stylebox_override("panel", UIKit.style(pair[2], 18, 0))
-		col.add_child(frame)
-		var tr := TextureRect.new()
-		tr.custom_minimum_size = Vector2(290, 300)
-		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		if pair[0] != null:
-			tr.texture = ImageTexture.create_from_image(pair[0])
-		frame.add_child(tr)
-		col.add_child(UIKit.label(pair[1], 28, pair[2]))
+	var ba := BeforeAfter.new(before_img, after)
+	ba.custom_minimum_size = Vector2(600, 520)
+	var bac := CenterContainer.new()
+	bac.add_child(ba)
+	vb.add_child(bac)
+	ba.intro()
+	vb.add_child(UIKit.label("arraste para comparar", 20, UIKit.DARK.lightened(0.3), 0))
 	var st := UIKit.StarRow.new()
 	st.custom_minimum_size = Vector2(260, 70)
 	var sc := CenterContainer.new()
@@ -1222,6 +1272,9 @@ func _show_result(after: Image, stars: int, reward: int) -> void:
 		dbl.disabled = true
 		Sfx.play("coin")))
 	btns.add_child(dbl)
+	var share := UIKit.btn("Compartilhar", UIKit.PINK, 26, Vector2(230, 76))
+	share.pressed.connect(func(): _share(after, stars))
+	btns.add_child(share)
 	var menu := UIKit.btn("Menu", UIKit.PURPLE, 26, Vector2(160, 76))
 	menu.pressed.connect(_to_menu)
 	btns.add_child(menu)
@@ -1230,6 +1283,59 @@ func _show_result(after: Image, stars: int, reward: int) -> void:
 		await get_tree().create_timer(0.35).timeout
 		st.filled = i + 1
 		Sfx.play("star", 0.0)
+
+## Monta uma imagem bonita do antes/depois, salva na galeria e abre para compartilhar
+func _share(after: Image, stars: int) -> void:
+	if before_img == null or after == null:
+		_toast("Sem imagem para compartilhar", UIKit.YELLOW, 30, 1.0)
+		return
+	var vp := SubViewport.new()
+	vp.size = Vector2i(720, 960)
+	vp.transparent_bg = false
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	add_child(vp)
+	var root := Control.new()
+	root.size = Vector2(720, 960)
+	root.theme = get_tree().root.theme
+	vp.add_child(root)
+	var bg := ColorRect.new()
+	bg.color = Color("2a1840")
+	bg.size = root.size
+	root.add_child(bg)
+	var logo := TextureRect.new()
+	logo.texture = load("res://assets/ui/logo.png")
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.position = Vector2(110, 10)
+	logo.size = Vector2(500, 150)
+	root.add_child(logo)
+	var ba := BeforeAfter.new(before_img, after)
+	ba.position = Vector2(30, 170)
+	ba.size = Vector2(660, 660)
+	ba.set_process(false)
+	root.add_child(ba)
+	var cap := UIKit.label("Fase %d  -  %s  %s" % [level, data["look"]["name"], "★".repeat(stars)], 34, Color.WHITE, 6)
+	cap.position = Vector2(0, 850)
+	cap.size = Vector2(720, 80)
+	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	root.add_child(cap)
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var img := vp.get_texture().get_image()
+	vp.queue_free()
+	var dir := OS.get_system_dir(OS.SYSTEM_DIR_PICTURES)
+	var path := ""
+	if dir != "":
+		dir += "/GrossToGlow"
+		if DirAccess.make_dir_recursive_absolute(dir) == OK or DirAccess.dir_exists_absolute(dir):
+			path = dir + "/paciente_%d_%d.png" % [level, Time.get_unix_time_from_system()]
+			if img.save_png(path) != OK:
+				path = ""
+	if path == "":
+		path = ProjectSettings.globalize_path("user://compartilhar_%d.png" % level)
+		img.save_png(path)
+	var opened := OS.shell_open(path) == OK
+	_toast("Foto salva na galeria (GrossToGlow)!" + ("" if opened else "\nAbra a galeria para enviar"), UIKit.GREEN, 30, 2.2)
 
 func _next() -> void:
 	GameData.current_level = level + 1
@@ -1318,7 +1424,7 @@ func _build_hud() -> void:
 	hud_root.add_child(top)
 	var head := "Fase %d  -  %s  (%s)" % [level, data["look"]["name"], Defs.PART_NAMES[data["part"]]]
 	if data["extreme"]:
-		head = "EXTREMO! " + head
+		head = "CHEFE! " + head
 	var hl := UIKit.label(head, 21, UIKit.RED.lightened(0.5) if data["extreme"] else Color.WHITE, 6)
 	hl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	top.add_child(hl)
@@ -1504,8 +1610,16 @@ func _say(text: String) -> void:
 	tw.tween_interval(1.6)
 	tw.tween_property(bp, "modulate:a", 0.0, 0.3)
 
+var toasts: Array = []
+
 func _toast(text: String, color := Color.WHITE, size := 40, dur := 1.0) -> void:
+	# empurra os avisos anteriores para cima para não sobrepor
+	toasts = toasts.filter(func(o): return is_instance_valid(o))
+	for o in toasts:
+		var up := 58.0 if o.get_line_count() <= 1 else 100.0
+		o.create_tween().tween_property(o, "position:y", o.position.y - up, 0.15)
 	var l := UIKit.label(text, mini(size, 36), color, 10)
+	toasts.append(l)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.anchor_left = 0.0
 	l.anchor_right = 1.0

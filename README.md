@@ -92,6 +92,16 @@ Furar/cortar pele saudável cria um machucado que precisa de algodão e curativo
 Cada problema sai com tamanho e cor de pus/sangue diferentes, e a mesma fase evita repetir o que saiu na anterior.
 Pano e algodão continuam limpando a sujeira que sobrou mesmo depois do problema estar "pronto".
 
+### Sensações (v0.8)
+
+- **Vibração** com força variável: cresce enquanto espreme/puxa, pulso seco a cada "nhec" do alicate, forte quando dói ou estoura.
+- **Sons molhados** gerados por síntese de bolhas, com várias versões sorteadas (sem repetir sempre o mesmo).
+- **Fio de pus contínuo** (`PusString`): sai do poro enquanto espreme, faz a curva, deita enrolando na pele e, ao soltar, desaba e vira mancha que dá para limpar.
+- **Corte de unha progressivo**: sulco aparece onde o alicate já passou, a ponta solta levanta, a lasca cai na pele/toalha e quica; borda nova fica branca e áspera.
+- **Pano moldado à pele**: cada ponto do tecido fica sempre acima da superfície.
+- **Antes/depois com slider** arrastável e botão **Compartilhar** (salva a foto em Imagens/GrossToGlow e abre no visualizador).
+- **Paciente chefe** a cada 5 fases: 10–12 problemas misturados, nome próprio e recompensa x3 + 150.
+
 ## Estrutura
 
 ```

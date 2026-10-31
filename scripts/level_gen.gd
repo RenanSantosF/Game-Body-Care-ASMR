@@ -44,7 +44,8 @@ static func _make(level: int, avoid_repeat: bool) -> Dictionary:
 
 	var count := clampi(2 + level / 2, 2, 7)
 	if extreme:
-		count = mini(count + 3, 10)
+		# paciente chefe: um monte de problemas misturados
+		count = clampi(9 + level / 10, 10, 12)
 
 	var chosen := []
 	if level == 1:
@@ -85,6 +86,9 @@ static func _make(level: int, avoid_repeat: bool) -> Dictionary:
 		"hair": [Color("2b1d14"), Color("5a3a22"), Color("a0522d"), Color("e3c27a"), Color("1a1a1a")][rng.randi() % 5],
 		"pillow": [Color("8e5ac8"), Color("e06aa8"), Color("4f8fd8"), Color("4fb89a"), Color("e8935a")][level % 5],
 	}
+	if extreme:
+		look["name"] = Defs.BOSSES[(level / 5 - 1) % Defs.BOSSES.size()]
+		look["hair"] = Color("1a1a1a")
 	return {"level": level, "part": part, "problems": chosen, "extreme": extreme, "look": look, "seed": rng.seed}
 
 static func _weighted(pool: Array, rng: RandomNumberGenerator, max_tier: int, extreme: bool) -> String:

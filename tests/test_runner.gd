@@ -21,6 +21,9 @@ func _ready() -> void:
 		var game = load("res://scenes/game.tscn").instantiate()
 		add_child(game)
 		await _wait(3.2)
+		while not game.input_ok:
+			await _wait(0.2)
+		await _wait(0.8)
 		await play(game, seen)
 		print("fase ", lvl, " ", game.data["part"], " ", game.data["problems"], " fim=", game.finished, " dor_max=", int(game.max_pain), " erros=", game.mistakes)
 		await _wait(3.5)

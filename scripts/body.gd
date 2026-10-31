@@ -233,6 +233,7 @@ func _step_drops(dt: float) -> void:
 			mi.queue_free()
 			if not s.is_empty():
 				add_stain(s[0], d["kind"], d["size"] * (2.2 + sp * 0.6), Vector2(v.x, v.z))
+				Sfx.play_throttled("drip", 0.07, 0.35, -14)
 			continue
 		keep.append(d)
 	drops = keep

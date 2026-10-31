@@ -76,6 +76,8 @@ var cut_host: Node3D              # onde a lâmina corta neste problema
 var guide_uv := PackedVector2Array()
 var wet := 0.0
 var pus_tint := Color.WHITE
+var cut_dir := 1.0
+var rub_stall := 0.0   # lado de onde o jogador começou o corte (alicate)
 var blood_peak := 0.0
 
 static var _tube_mats := {}
@@ -179,6 +181,13 @@ func rub(wpos: Vector3, px: float, brush_r: float) -> float:
 		# precisa limpar de verdade a área toda (cobertura ponderada >= 92%)
 		progress = clampf(cov / 0.92, 0.0, 1.0)
 		if progress >= 0.985:
+			progress = 1.0
+		# sobrou só um restinho que não sai (canto/dobra): esfregando sem ganho, conclui
+		if progress - before > 0.0005:
+			rub_stall = 0.0
+		else:
+			rub_stall += px
+		if progress >= 0.9 and rub_stall > 1400.0:
 			progress = 1.0
 		var g := progress - before
 		_visual()
@@ -1220,7 +1229,8 @@ func rub_nail(wpos: Vector3, brush_r: float) -> float:
 			cov += mk.img.get_pixel(px, py).r
 			cnt += 1
 	progress = clampf(cov / cnt / 0.9, 0.0, 1.0)
-	if progress >= 0.985:
+	# as bordas da unha (cutícula/cantos) quase não pegam o pincel: não exige 100%
+	if progress >= 0.95:
 		progress = 1.0
 	var g := progress - before
 	_visual()
@@ -1238,7 +1248,6 @@ func _visual() -> void:
 		"espinha", "cisto":
 			if stage == 1:
 				_squeeze_dome(p, 0.75)
-				_pus_string(n["dome"].position + Vector3(0, size * 0.42 * (1.0 - p * 0.6), 0), p * 0.11, 0.009)
 			elif stage == 0:
 				_lset("dome", "swell", p * 0.15)
 		"bolha":
@@ -1288,11 +1297,15 @@ func _visual() -> void:
 			if stage == 1:
 				_lset("callus", "strength", 1.0 - p * 0.9)
 		"unha_suja":
-			pass
+			if stage == 0:
+				var nm: ShaderMaterial = nail["mat"]
+				nm.set_shader_parameter("groove_at", 1.02)
+				nm.set_shader_parameter("groove_prog", p)
+				nm.set_shader_parameter("groove_dir", cut_dir)
+				nm.set_shader_parameter("lift_amt", nail["len"] * 0.45)
 		"unha_pus":
 			if stage == 1:
 				_squeeze_dome(p, 0.8)
-				_pus_string(to_local(n["holder"].global_position) + global_basis.inverse() * (nail["normal"] * nail["w"] * 0.2), p * 0.08, 0.008, "pus")
 		"fungo_unha":
 			if stage == 0:
 				n["thick"].scale = Vector3(1.0, lerpf(2.2, 1.0, p), 1.0)
@@ -1303,10 +1316,6 @@ func _visual() -> void:
 					pass
 				1:
 					_squeeze_dome(p, 0.85)
-					var top := Vector3(0, size * 0.5 * (1.0 - p * 0.7), 0)
-					_pus_string(top, p * 0.16, 0.016, "pus")
-					if p > 0.4:
-						_pus_string(top + Vector3(0.02, 0, 0.015), (p - 0.4) * 0.1, 0.01, "pus2")
 		"verme":
 			if stage == 0:
 				_lset("track", "cut", p)
@@ -1656,6 +1665,8 @@ func _on_done() -> void:
 func _cut_nail_tip(at: float) -> void:
 	var mat: ShaderMaterial = nail["mat"]
 	mat.set_shader_parameter("cut_at", at / nail["len"])
+	mat.set_shader_parameter("groove_prog", 0.0)
+	mat.set_shader_parameter("lift_amt", 0.0)
 	var piece := MeshInstance3D.new()
 	piece.mesh = (nail["mi"] as MeshInstance3D).mesh
 	var pm := mat.duplicate() as ShaderMaterial
@@ -1664,9 +1675,25 @@ func _cut_nail_tip(at: float) -> void:
 	pm.set_shader_parameter("keep_from", at / nail["len"])
 	piece.material_override = pm
 	nail["node"].add_child(piece)
-	var tw := create_tween().set_parallel()
-	tw.tween_property(piece, "position", piece.position + Vector3(0.05, 0.2, nail["len"] * 1.5), 0.5).set_ease(Tween.EASE_OUT)
-	tw.tween_property(piece, "rotation", Vector3(1.2, 0.8, 0.4), 0.5)
-	tw.chain().tween_property(piece, "scale", Vector3.ZERO, 0.2)
-	tw.chain().tween_callback(piece.queue_free)
-	Sfx.play("cut")
+	# a lasca solta: dá um pulinho, cai por gravidade na pele/toalha ao lado, quica e some
+	var start := piece.global_transform
+	piece.top_level = true
+	piece.global_transform = start
+	var side: Vector3 = nail["dir"]
+	var land: Vector3 = start.origin + side * nail["len"] * 1.6 + Vector3(rng.randf_range(-0.04, 0.04), 0, rng.randf_range(-0.04, 0.04))
+	var sp := body.surface(land.x, land.z)
+	land.y = (sp[0].y + 0.004) if not sp.is_empty() else start.origin.y - 0.12
+	var up_pt := start.origin.lerp(land, 0.3) + Vector3(0, 0.05, 0)
+	var rot_end := Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(-1.5, 1.5), rng.randf_range(2.6, 3.3))
+	var tw := create_tween()
+	tw.tween_property(piece, "global_position", up_pt, 0.16).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	tw.parallel().tween_property(piece, "rotation", rot_end * 0.5, 0.16)
+	tw.tween_property(piece, "global_position", land, 0.26).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	tw.parallel().tween_property(piece, "rotation", rot_end, 0.26)
+	tw.tween_property(piece, "global_position", land + Vector3(0, 0.012, 0), 0.08).set_ease(Tween.EASE_OUT)
+	tw.tween_property(piece, "global_position", land, 0.1).set_ease(Tween.EASE_IN)
+	tw.tween_interval(1.6)
+	tw.tween_property(piece, "scale", Vector3(0.001, 0.001, 0.001), 0.3)
+	tw.tween_callback(piece.queue_free)
+	Sfx.play("clip")
+	Sfx.play("tap", 0.2, -10)

@@ -100,9 +100,17 @@ func _yesterday() -> String:
 
 # ---------------------------------------------------- utilidades
 
-func vibrate(ms: int) -> void:
-	if vibrate_on and OS.has_feature("mobile"):
-		Input.vibrate_handheld(ms)
+var _vib_until := 0
+
+## amp 0..1 (força). Não empilha: ignora pulsos enquanto outro ainda vibra, exceto se mais forte.
+func vibrate(ms: int, amp := -1.0) -> void:
+	if not vibrate_on or not OS.has_feature("mobile"):
+		return
+	var now := Time.get_ticks_msec()
+	if now < _vib_until and amp < 0.8:
+		return
+	_vib_until = now + ms
+	Input.vibrate_handheld(ms, amp)
 
 func save_game() -> void:
 	var d := {

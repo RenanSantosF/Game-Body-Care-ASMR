@@ -43,7 +43,9 @@ func set_tool(id: String) -> void:
 			var fm := MeshGen.shader_mat("res://shaders/fabric.gdshader")
 			fm.set_shader_parameter("kind", 0)
 			fm.set_shader_parameter("base", Color("8cc9ef"))
-			MeshGen.inst(cloth, _cloth_mesh(), fm)
+			var cm := _cloth_mesh()
+			parts["cloth_mi"] = MeshGen.inst(cloth, cm, fm)
+			parts["cloth_base"] = cm.surface_get_arrays(0)
 			parts["mat"] = fm
 		"algodao":
 			var ball := Node3D.new()
@@ -221,6 +223,36 @@ func _cloth_mesh() -> ArrayMesh:
 	st.generate_normals()
 	return st.commit()
 
+var drape_body: Body
+
+## Tecido nunca entra na pele: cada vértice fica acima da superfície (com folga)
+func _drape() -> void:
+	if drape_body == null or not parts.has("cloth_mi"):
+		return
+	var mi: MeshInstance3D = parts["cloth_mi"]
+	var base: Array = parts["cloth_base"]
+	var src: PackedVector3Array = base[Mesh.ARRAY_VERTEX]
+	var xf := mi.global_transform
+	var inv := xf.affine_inverse()
+	var lift := 0.005 * xf.basis.get_scale().y
+	var out := PackedVector3Array()
+	out.resize(src.size())
+	for i in src.size():
+		var w := xf * src[i]
+		var sp := drape_body.surface(w.x, w.z)
+		if not sp.is_empty():
+			var top: float = sp[0].y + lift
+			if w.y < top:
+				w.y = top
+		out[i] = inv * w
+	var arr := base.duplicate()
+	arr[Mesh.ARRAY_VERTEX] = out
+	arr[Mesh.ARRAY_NORMAL] = null
+	var st := SurfaceTool.new()
+	st.create_from_arrays(arr)
+	st.generate_normals()
+	mi.mesh = st.commit()
+
 func set_active(a: bool, m := -1) -> void:
 	active = a
 	mech = m
@@ -245,12 +277,16 @@ func _process(delta: float) -> void:
 		"espremedor":
 			if active and grip:
 				parts["press"].position.y = -0.008 - sin(t * 16.0) * 0.004
-		"pano", "algodao":
+		"algodao":
 			if active:
 				root.rotation.z = sin(t * 18.0) * 0.18
 				root.rotation.x = cos(t * 15.0) * 0.12
-				var k := "cloth" if tool_id == "pano" else "ball"
-				parts[k].scale = Vector3(1.0 + sin(t * 20.0) * 0.06, 1.0 - sin(t * 20.0) * 0.08, 1.0)
+				parts["ball"].scale = Vector3(1.0 + sin(t * 20.0) * 0.06, 1.0 - sin(t * 20.0) * 0.08, 1.0)
+		"pano":
+			# esfrega deslizando (sem girar para dentro da pele) e molda o tecido à pele
+			if active:
+				root.position = Vector3(sin(t * 18.0) * 0.012, 0.0, cos(t * 15.0) * 0.008)
+			_drape()
 		"lamina", "raspador", "lixa":
 			if active:
 				root.rotation.z = sin(t * 22.0) * 0.1

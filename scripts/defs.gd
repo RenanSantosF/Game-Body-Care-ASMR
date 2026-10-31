@@ -92,6 +92,9 @@ const PROBLEMS := {
 		"stages": [["algodao", Mech.RUB, 0.7], ["curativo", Mech.TAP, 1.0]]},
 }
 
+## pacientes chefe (a cada 5 fases)
+const BOSSES := ["Zé do Pântano", "Dona Gosma", "Barão do Pus", "Tio Lodo", "Madame Craca", "Rei do Chulé", "Vovó Verruga", "Capitão Casca"]
+
 const NAMES := ["Seu Juca", "Dona Cida", "Tio Zé", "Bruna", "Kevin", "Dona Neide", "Marcão",
 	"Lu", "Pedrinho", "Vó Dalva", "Rafa", "Tia Sônia", "Jéssica", "Seu Arnaldo", "Diego",
 	"Valdirene", "Cleitinho", "Dona Zuleide", "Thiago", "Seu Bené", "Paty", "Gilmar"]

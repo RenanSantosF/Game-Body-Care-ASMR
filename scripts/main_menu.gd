@@ -183,7 +183,10 @@ func _levels() -> void:
 	for i in range(1, shown + 1):
 		var unlocked := i <= GameData.level
 		var col := UIKit.RED if LevelGen.is_extreme(i) else UIKit.BLUE
-		var b := UIKit.btn(str(i) if unlocked else "?", col, 34, Vector2(122, 110))
+		var txt := str(i) if unlocked else "?"
+		if LevelGen.is_extreme(i):
+			txt += "\nCHEFE"
+		var b := UIKit.btn(txt, col, 26 if LevelGen.is_extreme(i) else 34, Vector2(122, 110))
 		b.disabled = not unlocked
 		if unlocked:
 			b.pressed.connect(func(): _start(i))

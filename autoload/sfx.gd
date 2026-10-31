@@ -55,7 +55,14 @@ func _ready() -> void:
 	streams["click"] = _synth(0.05, 880, 640, 0.1, 3.0, 0.0, 0.5)
 	streams["wrong"] = _synth(0.3, 150, 110, 0.0, 1.0, 0.0, 0.5, true)
 	streams["poke"] = _synth(0.09, 1400, 700, 0.5, 2.5, 0.0, 0.7)
+	streams["clip"] = [_synth(0.05, 3200, 1900, 0.7, 4.0, 0.0, 0.95), _synth(0.06, 2800, 1600, 0.75, 4.0, 0.0, 0.9)]
 	streams["ouch"] = _voice()
+	# líquidos: várias versões para não soar repetido (escolhidas ao acaso)
+	streams["splat"] = [streams["splat"], _liquid(0.3, 7, 180, 520, 0.35, 0.2), _liquid(0.36, 10, 140, 420, 0.45, 0.15), _liquid(0.26, 5, 220, 700, 0.3, 0.25)]
+	streams["squish"] = [streams["squish"], _liquid(0.32, 6, 120, 360, 0.55, 0.12), _liquid(0.4, 9, 100, 300, 0.6, 0.1), _liquid(0.28, 4, 160, 460, 0.5, 0.14)]
+	streams["pop"] = [streams["pop"], _liquid(0.16, 1, 380, 620, 0.15, 0.4), _liquid(0.2, 2, 300, 560, 0.2, 0.35)]
+	streams["drip"] = [_liquid(0.12, 1, 600, 1100, 0.05, 0.5), _liquid(0.1, 1, 750, 1300, 0.05, 0.5), _liquid(0.14, 1, 500, 900, 0.08, 0.45)]
+	streams["ooze"] = [_liquid(0.5, 14, 90, 260, 0.65, 0.08), _liquid(0.55, 16, 80, 240, 0.7, 0.07)]
 	streams["coin"] = _seq([[988, 0.07], [1318, 0.14]])
 	streams["success"] = _seq([[523, 0.1], [659, 0.1], [784, 0.1], [1046, 0.25]])
 	streams["star"] = _seq([[1046, 0.08], [1568, 0.16]])
@@ -65,7 +72,8 @@ func play(snd: String, pitch_rand := 0.08, vol := 0.0) -> void:
 		return
 	var p := players[_next]
 	_next = (_next + 1) % players.size()
-	p.stream = streams[snd]
+	var st = streams[snd]
+	p.stream = st.pick_random() if st is Array else st
 	p.pitch_scale = 1.0 + randf_range(-pitch_rand, pitch_rand)
 	p.volume_db = vol
 	p.play()
@@ -120,6 +128,33 @@ func _seq(notes: Array) -> AudioStreamWAV:
 			var k := float(i) / n
 			phase += TAU * nt[0] / RATE
 			s.append((sin(phase) * 0.6 + sin(phase * 2.0) * 0.15) * pow(1.0 - k, 1.5) * 0.6)
+	return _wav(s)
+
+## Som molhado: bolhas (seno com pitch subindo e decaindo rápido) + ruído grave grudento
+func _liquid(dur: float, bubbles: int, fmin: float, fmax: float, noise: float, lp: float) -> AudioStreamWAV:
+	var n := int(dur * RATE)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var y := 0.0
+	var y2 := 0.0
+	for i in n:
+		var k := float(i) / n
+		y += lp * ((randf() * 2.0 - 1.0) - y)
+		y2 += 0.08 * (y - y2)
+		s[i] = y2 * noise * 2.5 * pow(1.0 - k, 1.5) * minf(1.0, k * 30.0)
+	for b in bubbles:
+		var t0 := int(randf_range(0.0, 0.7) * n)
+		var f := randf_range(fmin, fmax)
+		var tau := randf_range(0.015, 0.05)
+		var amp := randf_range(0.4, 0.9)
+		var ph := 0.0
+		var m := mini(n - t0, int(tau * 5.0 * RATE))
+		for j in m:
+			var tt := float(j) / RATE
+			ph += TAU * f * (1.0 + tt * 60.0) / RATE
+			s[t0 + j] += sin(ph) * amp * exp(-tt / tau) * minf(1.0, tt / 0.002)
+	for i in n:
+		s[i] *= 0.55
 	return _wav(s)
 
 ## "Ai!" sintetizado (formante simples)
