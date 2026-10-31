@@ -77,7 +77,9 @@ var guide_uv := PackedVector2Array()
 var wet := 0.0
 var pus_tint := Color.WHITE
 var cut_dir := 1.0
-var rub_stall := 0.0   # lado de onde o jogador começou o corte (alicate)
+var rub_stall := 0.0
+var cut_len := 0.0
+var last_cut_w := Vector3.ZERO   # lado de onde o jogador começou o corte (alicate)
 var blood_peak := 0.0
 
 static var _tube_mats := {}
@@ -210,10 +212,18 @@ func cut_stroke(wpos: Vector3, first: bool) -> float:
 	for g in guide_uv:
 		if fx.cut_near(g) > 0.5:
 			covered += 1
-	set_cut(float(covered) / maxf(1.0, guide_uv.size()) / 0.8)
 	var md := INF
-	for q in cut_path:
+	var plen := 0.0
+	for i in cut_path.size():
+		var q := cut_path[i]
 		md = minf(md, Vector2(q.x - wpos.x, q.z - wpos.z).length())
+		if i > 0:
+			plen += q.distance_to(cut_path[i - 1])
+	# um corte simples basta: conta o comprimento cortado perto da linha (qualquer sentido)
+	if not first and md < size * 0.6:
+		cut_len += minf(wpos.distance_to(last_cut_w), size * 0.5)
+	last_cut_w = wpos
+	set_cut(maxf(float(covered) / maxf(1.0, guide_uv.size()) / 0.8, cut_len / maxf(0.001, plen * 0.6)))
 	return md
 
 ## Raio do dedo contra a cúpula (para cortar em cima do furúnculo)

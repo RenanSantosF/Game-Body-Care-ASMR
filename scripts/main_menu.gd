@@ -92,9 +92,33 @@ func _ready() -> void:
 	fc.add_child(free)
 	center.add_child(fc)
 
-	if GameData.daily_available():
+	if GameData.crashed_last:
+		GameData.crashed_last = false
+		await get_tree().create_timer(0.4).timeout
+		_crash_notice()
+	elif GameData.daily_available():
 		await get_tree().create_timer(0.4).timeout
 		_daily()
+
+## O jogo fechou sozinho na última vez: oferece copiar o relatório para enviar
+func _crash_notice() -> void:
+	var m := UIKit.modal(self)
+	var vb: VBoxContainer = m[1]
+	vb.add_child(UIKit.label("Ops! O jogo fechou sozinho", 38, UIKit.RED))
+	var t := UIKit.label("Toque em Copiar relatório e cole a mensagem para o desenvolvedor. Isso ajuda a corrigir!", 24, UIKit.DARK, 0)
+	t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	t.custom_minimum_size.x = 540
+	vb.add_child(t)
+	var row := UIKit.hbox(16)
+	vb.add_child(row)
+	var cp := UIKit.btn("Copiar relatório", UIKit.PINK, 26, Vector2(280, 76))
+	cp.pressed.connect(func():
+		DisplayServer.clipboard_set(GameData.crash_report)
+		cp.text = "Copiado!")
+	row.add_child(cp)
+	var ok := UIKit.btn("Fechar", UIKit.PURPLE, 26, Vector2(180, 76))
+	ok.pressed.connect(func(): m[0].queue_free())
+	row.add_child(ok)
 
 func _process(delta: float) -> void:
 	for b in bubbles:

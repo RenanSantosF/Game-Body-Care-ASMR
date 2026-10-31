@@ -18,7 +18,15 @@ var music_on := true
 var vibrate_on := true
 var patients_treated := 0
 
+const RUN_FLAG := "user://running.flag"
+var crashed_last := false   # a última sessão terminou sem pausar/fechar (fechou sozinho)
+var crash_report := ""
+
 func _ready() -> void:
+	crashed_last = FileAccess.file_exists(RUN_FLAG)
+	if crashed_last:
+		crash_report = _last_log_tail()
+	_mark_running(true)
 	load_game()
 	current_level = level
 	var th := Theme.new()
@@ -28,6 +36,38 @@ func _ready() -> void:
 	fv.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 600}
 	th.default_font = fv
 	get_tree().root.theme = th
+
+## Marca "rodando"; some quando o app vai para o fundo ou fecha normalmente
+func _mark_running(on: bool) -> void:
+	if on:
+		var f := FileAccess.open(RUN_FLAG, FileAccess.WRITE)
+		if f:
+			f.store_string("fase %d" % current_level)
+	elif FileAccess.file_exists(RUN_FLAG):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(RUN_FLAG))
+
+func _exit_tree() -> void:
+	_mark_running(false)
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_WM_CLOSE_REQUEST, NOTIFICATION_APPLICATION_FOCUS_OUT:
+			_mark_running(false)
+		NOTIFICATION_APPLICATION_RESUMED, NOTIFICATION_APPLICATION_FOCUS_IN:
+			_mark_running(true)
+
+## Últimas linhas do log da sessão anterior (o Godot renomeia o log antigo ao abrir)
+func _last_log_tail() -> String:
+	var dir := "user://logs"
+	var files := Array(DirAccess.get_files_at(dir)).filter(func(f): return f.begins_with("godot") and f != "godot.log")
+	if files.is_empty():
+		return "(sem log)"
+	files.sort()
+	var txt := FileAccess.get_file_as_string(dir + "/" + files[-1])
+	var lines := txt.split("\n")
+	var keep := lines.slice(maxi(0, lines.size() - 60))
+	var info := "Gross to Glow %s | %s | %s\n" % [ProjectSettings.get_setting("application/config/version", "?"), OS.get_model_name(), OS.get_version()]
+	return info + "\n".join(keep)
 
 func add_coins(n: int) -> void:
 	coins = maxi(0, coins + n)

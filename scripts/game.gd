@@ -157,8 +157,8 @@ func _capture() -> Image:
 	if tex == null:
 		return null
 	var img := tex.get_image()
-	if img and img.get_width() > 960:
-		img.resize(img.get_width() / 2, img.get_height() / 2, Image.INTERPOLATE_BILINEAR)
+	if img and img.get_width() > 720:
+		img.resize(720, int(img.get_height() * 720.0 / img.get_width()), Image.INTERPOLATE_BILINEAR)
 	return img
 
 func _check_tools() -> void:

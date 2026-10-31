@@ -10,6 +10,7 @@ config/description="Clínica nojenta e satisfatória: trate pacientes e veja o a
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://icon.png"
+config/version="0.8.1"
 
 [autoload]
 
@@ -26,6 +27,10 @@ window/size/viewport_height=1280
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=1
+
+[debug]
+
+file_logging/enable_file_logging=true
 
 [input_devices]
 
