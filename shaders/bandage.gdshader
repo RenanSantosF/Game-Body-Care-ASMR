@@ -23,7 +23,7 @@ float shape(vec2 uv) {
 }
 
 float hgt(vec2 uv) {
-	float pad = (1.0 - smoothstep(0.55, 0.59, abs(uv.x))) * (1.0 - smoothstep(aspect * 0.78, aspect * 0.84, abs(uv.y)));
+	float pad = (1.0 - smoothstep(0.7, 0.74, abs(uv.x))) * (1.0 - smoothstep(aspect * 0.82, aspect * 0.88, abs(uv.y)));
 	return pad * 0.6 + smoothstep(0.0, -0.05, shape(uv)) * 0.2;
 }
 
@@ -48,7 +48,7 @@ void fragment() {
 	float hole = 1.0 - smoothstep(0.06, 0.1, length(hp));
 	tape = mix(tape, tape * 0.7, hole * 0.8);
 	// gaze no meio
-	float pad = (1.0 - smoothstep(0.55, 0.57, abs(uv.x))) * (1.0 - smoothstep(aspect * 0.78, aspect * 0.81, abs(uv.y)));
+	float pad = (1.0 - smoothstep(0.7, 0.72, abs(uv.x))) * (1.0 - smoothstep(aspect * 0.82, aspect * 0.85, abs(uv.y)));
 	vec2 pg = uv * vec2(70.0, 70.0);
 	float gauze = 0.85 + 0.15 * max(abs(sin(pg.x * 3.14)), abs(sin(pg.y * 3.14)));
 	vec3 padc = vec3(0.98, 0.96, 0.95) * gauze;

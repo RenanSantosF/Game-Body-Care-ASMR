@@ -55,7 +55,7 @@ const PROBLEMS := {
 	"unha_suja": {"name": "Unha grande e suja", "tier": 2, "size": 0.1, "w": 4, "where": "unha",
 		"stages": [["alicate", Mech.CUT, 1.0], ["pano", Mech.RUB, 0.75]]},
 	"unha_pus":  {"name": "Unha inflamada com pus", "tier": 2, "size": 0.1, "w": 3, "where": "unha",
-		"stages": [["agulha", Mech.HOLD, 0.45], ["espremedor", Mech.HOLD, 1.5], ["algodao", Mech.RUB, 0.75], ["curativo", Mech.TAP, 1.0]]},
+		"stages": [["agulha", Mech.HOLD, 0.45], ["espremedor", Mech.HOLD, 1.5], ["algodao", Mech.RUB, 0.75], ["pomada", Mech.RUB, 400.0], ["curativo", Mech.TAP, 1.0]]},
 	"crosta":    {"name": "Casca de ferida", "tier": 2, "size": 0.11, "w": 3, "where": "pele",
 		"stages": [["algodao", Mech.RUB, 500.0], ["raspador", Mech.RUB, 0.75], ["pomada", Mech.RUB, 600.0]]},
 	"calo":      {"name": "Calo grosso", "tier": 2, "size": 0.12, "w": 3, "where": "calo",
@@ -71,7 +71,7 @@ const PROBLEMS := {
 	"favo":      {"name": "Ferida cheia de buracos", "tier": 3, "size": 0.21, "w": 2, "where": "dorso",
 		"stages": [["pano", Mech.RUB, 0.7], ["espremedor", Mech.PICK, 1.0], ["algodao", Mech.RUB, 600.0], ["pomada", Mech.RUB, 700.0], ["curativo", Mech.TAP, 1.0]]},
 	"unha_encravada": {"name": "Unha encravada", "tier": 3, "size": 0.11, "w": 3, "where": "unha",
-		"stages": [["alicate", Mech.CUT, 1.0], ["pinca", Mech.PULL, 260.0], ["algodao", Mech.RUB, 0.75], ["curativo", Mech.TAP, 1.0]]},
+		"stages": [["alicate", Mech.CUT, 1.0], ["pinca", Mech.PULL, 260.0], ["algodao", Mech.RUB, 0.75], ["pomada", Mech.RUB, 400.0], ["curativo", Mech.TAP, 1.0]]},
 	"verruga":   {"name": "Verruga", "tier": 3, "size": 0.07, "w": 3, "where": "dedo",
 		"stages": [["spray", Mech.HOLD, 1.3], ["raspador", Mech.RUB, 600.0], ["pomada", Mech.RUB, 400.0]]},
 	# --- novos, bem nojentos
@@ -82,7 +82,7 @@ const PROBLEMS := {
 	"ralado":    {"name": "Ralado infeccionado", "tier": 2, "size": 0.16, "w": 3, "where": "dorso",
 		"stages": [["pinca", Mech.PICK, 1.0], ["pano", Mech.RUB, 0.75], ["pomada", Mech.RUB, 600.0], ["curativo", Mech.TAP, 1.0]]},
 	"bicho_pe":  {"name": "Bicho-de-pé", "tier": 3, "size": 0.07, "w": 3, "where": "calo",
-		"stages": [["agulha", Mech.HOLD, 0.6], ["pinca", Mech.PULL, 260.0], ["algodao", Mech.RUB, 0.7], ["curativo", Mech.TAP, 1.0]]},
+		"stages": [["agulha", Mech.HOLD, 0.6], ["pinca", Mech.PULL, 260.0], ["algodao", Mech.RUB, 0.7], ["pomada", Mech.RUB, 400.0], ["curativo", Mech.TAP, 1.0]]},
 	"espinhos":  {"name": "Espinhos de cacto", "tier": 2, "size": 0.13, "w": 3, "where": "pele",
 		"stages": [["pinca", Mech.PICK, 1.0], ["algodao", Mech.RUB, 0.7]]},
 	"unha_roxa": {"name": "Unha roxa (sangue preso)", "tier": 2, "size": 0.1, "w": 2, "where": "unha",
@@ -104,7 +104,7 @@ const PROBLEMS := {
 		"stages": [["lamina", Mech.SWEEP, 1.0]]},
 	# criado quando o jogador machuca o paciente
 	"machucado": {"name": "Machucado", "tier": 99, "size": 0.06, "w": 0, "where": "pele",
-		"stages": [["algodao", Mech.RUB, 0.7], ["curativo", Mech.TAP, 1.0]]},
+		"stages": [["algodao", Mech.RUB, 0.7], ["pomada", Mech.RUB, 400.0], ["curativo", Mech.TAP, 1.0]]},
 }
 
 ## pacientes chefe (a cada 5 fases)

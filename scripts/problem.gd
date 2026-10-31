@@ -83,6 +83,7 @@ var rub_stall := 0.0
 var cut_len := 0.0
 var last_cut_w := Vector3.ZERO   # lado de onde o jogador começou o corte (alicate)
 var blood_peak := 0.0
+var domes: Array = []          # calombos (para a ferramenta pousar em cima)
 var damage := 0                 # quantas vezes o jogador piorou este problema (ferramenta errada)
 
 static var _tube_mats := {}
@@ -90,6 +91,15 @@ static var _tube_mats := {}
 func setup(p_id: String, p_body: Body, p_rng: RandomNumberGenerator, extra := {}) -> void:
 	id = p_id
 	def = Defs.PROBLEMS[id]
+	# pomada é opcional enquanto o jogador ainda não tem (não pode travar a fase)
+	if not GameData.owned.has("pomada"):
+		var has_p := false
+		for st in def["stages"]:
+			if st[0] == "pomada":
+				has_p = true
+		if has_p and def["stages"].size() > 1:
+			def = def.duplicate(true)
+			def["stages"] = def["stages"].filter(func(st): return st[0] != "pomada")
 	size = def["size"]
 	body = p_body
 	skin = body.skin_mat.get_shader_parameter("skin")
@@ -163,6 +173,8 @@ func rub(wpos: Vector3, px: float, brush_r: float) -> float:
 				fx.wipe(host_uv(h, wpos), brush_r / _host_half(h) * FxMap.SIZE * 0.5, 0.45 * speed)
 	if tool() == "pomada":
 		_spread_cream(wpos, brush_r)
+		if not cream_ready():
+			return 0.0
 	var a := amount()
 	var target := _rub_target()
 	var bhost: MeshInstance3D = n.get("aggr") if _aggr_stage() and tool() == "algodao" else (cut_host if id == "machucado" and tool() == "algodao" else null)
@@ -399,6 +411,9 @@ func _add(x: float) -> void:
 		return
 	# esfregar por distância (pomada etc.) pede ~15% menos que antes
 	progress += x * speed / (amount() * (0.7 if mech() == Defs.Mech.RUB else 1.0))
+	# pomada: só termina quando as bolinhas forem espalhadas de verdade
+	if tool() == "pomada" and n.has("dollops"):
+		progress = minf(progress, 0.15 + cream_spread() * 0.9)
 	_visual()
 	if progress >= 1.0:
 		_complete_stage()
@@ -541,7 +556,25 @@ func _dome(kind: int, r: float, h: float, pos := Vector3.ZERO) -> MeshInstance3D
 	mat.set_shader_parameter("seed", rng.randf() * 20.0)
 	var mi := MeshGen.inst(self, MeshGen.bump(), mat, pos + Vector3(0, -0.003, 0), Vector3(r * 1.25, h, r * 1.25))
 	mi.set_meta("base_scale", mi.scale)
+	domes.append(mi)
 	return mi
+
+## Altura (mundo) do topo dos calombos neste ponto, para a ferramenta pousar em cima e não entrar
+func surface_top(wpos: Vector3) -> float:
+	var top := -INF
+	for d in domes:
+		if not is_instance_valid(d) or not d.is_visible_in_tree():
+			continue
+		var lp: Vector3 = d.global_transform.affine_inverse() * wpos
+		var r := Vector2(lp.x, lp.z).length()
+		if r >= 1.0:
+			continue
+		var m := d.material_override as ShaderMaterial
+		var dfv = m.get_shader_parameter("deflate") if m else 0.0
+		var df: float = dfv if dfv != null else 0.0
+		var hy: float = MeshGen.bump_profile(r) * (1.0 - df * 0.75)
+		top = maxf(top, d.to_global(Vector3(lp.x, hy, lp.z)).y)
+	return top
 
 static func tube_mat(kind: int, tint := Color.WHITE) -> ShaderMaterial:
 	var key := "%d_%s" % [kind, tint.to_html()]
@@ -639,9 +672,15 @@ func _bandage(r_along: float, r_side: float, at := Vector3.INF, along := Vector3
 		fwd = Vector3(1, 0, 0)
 	fwd = fwd.normalized()
 	var rot := atan2(fwd.z, fwd.x)
-	# gaze ocupa |u| < 0.55 e |v| < aspect*0.78 do adesivo
-	var half := maxf(r_along, 0.02) / 0.55
-	var aspect := clampf(r_side / (0.78 * half), 0.32, 0.92)
+	# gaze ocupa |u| < 0.7 e |v| < aspect*0.82 do adesivo
+	var half := maxf(r_along, 0.02) / 0.7
+	# não pode cobrir outro machucado que ainda não foi tratado
+	for q in body.get_children():
+		if q is Problem and q != self and not q.done:
+			var qc: Vector3 = q.center()
+			var dq: float = Vector2(qc.x - c.x, qc.z - c.z).length() - q.size * 0.9
+			half = minf(half, maxf(r_along * 1.12, dq))
+	var aspect := clampf(r_side / (0.82 * half), 0.32, 0.95)
 	var mi := MeshInstance3D.new()
 	mi.mesh = MeshGen.patch(body, c, half, rot, lift, 24)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1526,7 +1565,7 @@ func used_tool(t: String) -> bool:
 func after_effect(wpos: Vector3, t: String) -> bool:
 	match t:
 		"pomada":
-			_spread_cream(wpos, 0.06)
+			_spread_cream(wpos, 0.06, false)
 		"lixa", "raspador":
 			for key in ["callus", "crust"]:
 				if n.has(key) and is_instance_valid(n[key]):
@@ -1564,8 +1603,67 @@ func _add_extra_stages() -> void:
 func _aggr_stage() -> bool:
 	return not done and def["stages"][stage].size() > 3 and def["stages"][stage][3] == "aggr"
 
+const DOLLOPS := 4
+
+## Pomada em 2 tempos: primeiro aperta bolinhas de creme sobre a ferida, depois espalha
+func cream_ready() -> bool:
+	return n.get("dollops", []).size() >= DOLLOPS
+
+## Quanto das bolinhas de pomada já foi espalhado (0..1)
+func cream_spread() -> float:
+	var dl: Array = n.get("dollops", [])
+	if dl.is_empty():
+		return 0.0
+	var s := 0.0
+	for b in dl:
+		var nd: Node3D = b
+		var full: Vector3 = nd.get_meta("full")
+		s += 1.0 if not nd.visible else clampf(1.0 - (nd.scale.y / full.y - 0.22) / 0.78, 0.0, 1.0)
+	return s / DOLLOPS
+
+func cream_hint() -> String:
+	if not cream_ready():
+		return "Aperte a pomada sobre a ferida (%d/%d)" % [n.get("dollops", []).size(), DOLLOPS]
+	return "Agora ESPALHE a pomada por toda a ferida!"
+
+func _add_dollop(wpos: Vector3) -> void:
+	var sp := body.surface(wpos.x, wpos.z)
+	if sp.is_empty():
+		return
+	var dl: Array = n.get("dollops", [])
+	n["dollops"] = dl
+	var mi := MeshInstance3D.new()
+	mi.mesh = MeshGen.sphere(1.0)
+	var mat := MeshGen.std(Color(0.98, 0.97, 0.94), 0.18, 0.0, "cream_dollop")
+	mat.metallic_specular = 0.8
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	body.add_child(mi)
+	mi.global_position = sp[0] + sp[1] * 0.004
+	mi.global_basis = MeshGen.basis_from_normal(sp[1]).rotated(sp[1], rng.randf() * TAU)
+	var r := clampf(size * 0.2, 0.014, 0.03)
+	mi.scale = Vector3.ONE * 0.001
+	mi.set_meta("full", Vector3(r, r * 0.75, r * 1.15))
+	create_tween().tween_property(mi, "scale", mi.get_meta("full"), 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	dl.append(mi)
+	Sfx.play("squish", 0.3, -10)
+	GameData.vibrate(12, 0.3)
+
 ## Pomada: camada branca que aparece onde se espalha (fica por baixo do curativo)
-func _spread_cream(wpos: Vector3, brush_r: float) -> void:
+func _spread_cream(wpos: Vector3, brush_r: float, apply := true) -> void:
+	var dl: Array = n.get("dollops", [])
+	if apply and dl.size() < DOLLOPS and not done:
+		if dl.is_empty() or (dl[dl.size() - 1] as Node3D).global_position.distance_to(wpos) > maxf(size * 0.3, 0.025):
+			_add_dollop(wpos)
+		return
+	# espalhando: as bolinhas achatam e viram a camada
+	for b in dl:
+		var nd: Node3D = b
+		if nd.visible and nd.global_position.distance_to(wpos) < brush_r * 1.7:
+			var full: Vector3 = nd.get_meta("full")
+			nd.scale = Vector3(minf(nd.scale.x * 1.025, full.x * 1.6), nd.scale.y * 0.9, minf(nd.scale.z * 1.025, full.z * 1.6))
+			if nd.scale.y < full.y * 0.22:
+				nd.hide()
 	if not n.has("cream"):
 		var cr := _lesion(L_CREAM, maxf(size * 1.35, 0.06), Vector2.ZERO, true, 0.0095)
 		var mk: CleanMask = cr.get_meta("mask")
@@ -2024,6 +2122,12 @@ func _on_stage_end_rest(s: int) -> void:
 	if def["stages"][s][0] == "pomada" and n.has("cream") and is_instance_valid(n["cream"]):
 		var cm := _lmat(n["cream"])
 		create_tween().tween_method(func(v): cm.set_shader_parameter("fill", v), 0.0, 0.85, 0.7)
+		for b in n.get("dollops", []):
+			var nd: Node3D = b
+			if nd.visible:
+				var tw := create_tween()
+				tw.tween_property(nd, "scale", nd.scale * Vector3(1.4, 0.05, 1.4), 0.5)
+				tw.tween_callback(nd.hide)
 	# antisséptico estanca o sangramento
 	if def["stages"][s][0] == "algodao":
 		for h in fx_hosts:
@@ -2124,7 +2228,7 @@ func _on_stage_end_rest(s: int) -> void:
 				_burst(p + up * 0.02, PUS_C, 16, 0.9, 0.009, 40.0)
 				popped.emit(self, PUS_C)
 				Sfx.play("splat")
-			elif s == 3:
+			elif s == 4:
 				_nail_bandage()
 		"unha_encravada":
 			if s == 0:
@@ -2139,7 +2243,7 @@ func _on_stage_end_rest(s: int) -> void:
 				_burst(p2, PUS_C, 14, 0.9, 0.009, 40.0)
 				popped.emit(self, PUS_C)
 				Sfx.play("splat")
-			elif s == 3:
+			elif s == 4:
 				_nail_bandage()
 		"furunculo", "abscesso", "carbunculo":
 			if s == 0:
@@ -2182,7 +2286,7 @@ func _on_stage_end_rest(s: int) -> void:
 			if s == 0:
 				pass
 		"machucado":
-			if s == 1:
+			if s == 2:
 				_bandage(wound_radius(), wound_radius())
 		"acne_costas":
 			if s == 0:

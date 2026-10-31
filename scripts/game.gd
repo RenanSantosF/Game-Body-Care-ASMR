@@ -157,7 +157,7 @@ func _spawn(id: String, sp: Dictionary, prng: RandomNumberGenerator) -> Problem:
 		total_stages += c
 		_update_progress())
 	problems.append(p)
-	total_stages += Defs.stage_count(id)
+	total_stages += p.def["stages"].size()
 	return p
 
 func _capture() -> Image:
@@ -688,8 +688,15 @@ func _update_tool_model() -> void:
 	else:
 		# encosta na pele: desce só o quanto a pele afundou ali (não atravessa)
 		pos = hit[0] + hit[1] * 0.005 + Vector3(0, _skin_dy(hit[0]), 0)
+		# em cima de espinha/furúnculo/bolha a ponta pousa no calombo (não entra antes de furar)
+		for q in problems:
+			if q.center().distance_to(pos) < q.size * 2.0:
+				var top := q.surface_top(pos)
+				if top > -INF:
+					pos.y = maxf(pos.y, top + 0.004)
 	if active and active.mech() == Defs.Mech.PULL and triggering:
-		pos = pos.lerp(active.grip_point(), 0.6)
+		# a ponta da pinça fica exatamente onde está segurando (verme, pelo, carrapato...)
+		pos = active.grip_point()
 	if not tool_model.has_meta("shown"):
 		tool_pos = pos
 		tool_model.set_meta("shown", true)
@@ -1002,7 +1009,7 @@ func _start_on(p: Problem, pos: Vector2) -> void:
 	if focus == null or focus.done:
 		focus = p
 	p.speed = GameData.speed_mult(selected) * _dirt_mult(p)
-	lbl_hint.text = Defs.MECH_HINT[p.mech()]
+	lbl_hint.text = p.cream_hint() if p.tool() == "pomada" else Defs.MECH_HINT[p.mech()]
 	if p.mech() == Defs.Mech.PULL:
 		p.pull_dir = Vector3(cam.global_basis.x.x, 0, cam.global_basis.x.z).normalized()
 
@@ -1114,7 +1121,11 @@ func _do_rub(p: Problem, pos: Vector2, px: float, delta := Vector2.ZERO) -> void
 	if p.uses_nail_mask():
 		gained = p.rub_nail(wpos, BRUSH.get(selected, 0.04) * 0.6)
 	else:
+		var had := p.cream_ready()
 		gained = p.rub(wpos, px, BRUSH.get(selected, 0.04))
+		if selected == "pomada" and had != p.cream_ready():
+			_toast("Agora espalhe a pomada!", UIKit.GREEN, 32, 1.0)
+			_update_labels()
 	if selected in ["pano", "algodao"]:
 		body.clean_stains(wpos, BRUSH.get(selected, 0.04))
 	# só mostra efeito/suja a ferramenta quando de fato está tirando algo
@@ -1786,7 +1797,8 @@ func _update_labels() -> void:
 	if _dirt_mult(p) < 1.0:
 		lbl_hint.text = "Tá sujo em volta: limpe com o Pano primeiro!"
 	elif _hints_on():
-		lbl_hint.text = "Use: %s  -  %s (segure o botão verde)" % [Defs.TOOLS[p.tool()]["name"], Defs.MECH_HINT[p.mech()]]
+		var mh: String = p.cream_hint() if p.tool() == "pomada" else Defs.MECH_HINT[p.mech()]
+		lbl_hint.text = "Use: %s  -  %s (segure o botão verde)" % [Defs.TOOLS[p.tool()]["name"], mh]
 	elif selected == "":
 		lbl_hint.text = "Escolha uma ferramenta"
 	else:
