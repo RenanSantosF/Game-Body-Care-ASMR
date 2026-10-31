@@ -10,7 +10,7 @@ config/description="Clínica nojenta e satisfatória: trate pacientes e veja o a
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://icon.png"
-config/version="0.9.5"
+config/version="1.0.0"
 
 [autoload]
 
@@ -90,3 +90,12 @@ g_c2={
 "type": "sampler2D",
 "value": ""
 }
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/gg_native/plugin.cfg")
+
+[internationalization]
+
+locale/translations=PackedStringArray("res://assets/i18n/strings.pt.translation", "res://assets/i18n/strings.en.translation", "res://assets/i18n/strings.es.translation")
+locale/fallback="pt"

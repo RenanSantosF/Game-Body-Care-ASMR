@@ -227,7 +227,7 @@ func _check_tools() -> void:
 		desc.custom_minimum_size = Vector2(200, 40)
 		col.add_child(desc)
 		var price: int = Defs.TOOLS[tl]["price"]
-		var buy := UIKit.btn("Comprar %d" % price, UIKit.BLUE, 22, Vector2(200, 60))
+		var buy := UIKit.btn(tr("Comprar %d") % price, UIKit.BLUE, 22, Vector2(200, 60))
 		buy.disabled = GameData.coins < price
 		var ad := UIKit.btn("Grátis (AD)", UIKit.GREEN, 22, Vector2(200, 60))
 		buy.pressed.connect(func():
@@ -251,8 +251,17 @@ func _check_tools() -> void:
 	bc.add_child(back)
 	vb.add_child(bc)
 
+## Saindo da fase (próximo paciente/menu): para animações presas a nós que vão sumir
+func _exit_tree() -> void:
+	print("[log] saiu da fase %d" % level)
+	for tw in get_tree().get_processed_tweens():
+		if tw.is_valid():
+			tw.kill()
+	set_process(false)
+
 func _begin() -> void:
-	_toast("Fase %d  -  %s" % [level, data["look"]["name"]], Color.WHITE, 46, 1.4)
+	print("[log] fase %d (%s): %s" % [level, data["part"], str(data["problems"])])
+	_toast(tr("Fase %d  -  %s") % [level, tr(data["look"]["name"])], Color.WHITE, 46, 1.4)
 	_say("Doutor, me ajuda!")
 	if data["extreme"]:
 		await get_tree().create_timer(0.9).timeout
@@ -261,7 +270,7 @@ func _begin() -> void:
 		GameData.vibrate(120, 1.0)
 		Sfx.play("squish")
 		await get_tree().create_timer(1.0).timeout
-		_toast("%d problemas! Recompensa x3" % problems.size(), Color("ffc43d"), 36, 1.4)
+		_toast(tr("%d problemas! Recompensa x3") % problems.size(), Color("ffc43d"), 36, 1.4)
 	await get_tree().create_timer(1.0).timeout
 	_focus_on(_first_problem())
 	input_ok = true
@@ -451,7 +460,7 @@ func _update_guide() -> void:
 		return
 	if pressing and active and not active.done and not triggering and active.mech() in [Defs.Mech.HOLD, Defs.Mech.PULL, Defs.Mech.PICK, Defs.Mech.TAP]:
 		var verb: String = {"pinca": "fechar a pinça", "espremedor": "apertar", "agulha": "furar", "spray": "borrifar", "curativo": "colar o curativo"}.get(selected, "usar")
-		lbl_hint.text = "Segure o botão verde para %s!" % verb
+		lbl_hint.text = tr("Segure o botão verde para %s!") % tr(verb)
 	var p := focus if focus and not focus.done else _next_problem(cam_look)
 	focus = p
 	if p == null or finished:
@@ -677,6 +686,11 @@ func _update_deform(delta: float) -> void:
 					qa = 0.008 + clampf(active.progress, 0.0, 1.0) * 0.02
 			_:
 				pa = 0.003
+	# pinça tirando item pequeno: a pele estica junto (mesmo depois de soltar o botão)
+	for q in problems:
+		if q.pick_pull_amt > 0.0:
+			qpos = q.pick_pull_pos
+			qa = maxf(qa, q.pick_pull_amt)
 	press_cur = lerpf(press_cur, pa, minf(1.0, delta * 14.0))
 	pull_cur = lerpf(pull_cur, qa, minf(1.0, delta * 10.0))
 	_press_pos = ppos
@@ -692,11 +706,14 @@ var _fit := 1.0
 ## Espremedor do tamanho do caso: pequeno para cravos/espinhas da acne, maior para furúnculos
 func _tool_fit() -> float:
 	var want := 1.0
-	if selected == "espremedor":
+	if selected == "espremedor" or selected == "pinca":
 		var t := active if active else _pick_problem(last_pos)
-		if t and t.tool() == "espremedor":
+		if t and t.tool() == selected:
 			if t.mech() == Defs.Mech.PICK:
+				# pinça/espremedor pequenos para tirar coisas pequenas
 				want = 0.55
+			elif selected == "pinca":
+				want = clampf(t.size / 0.1, 0.65, 1.1)
 			else:
 				want = clampf(t.size / 0.12, 0.65, 1.25)
 	_fit = lerpf(_fit, want, 0.2)
@@ -1325,7 +1342,7 @@ func _rub_fx(p: Problem) -> void:
 
 func _wrong(p: Problem, pos: Vector2) -> void:
 	if not selected in HARMFUL:
-		_toast("%s não serve para isso. Use: %s" % [Defs.TOOLS[selected]["name"], Defs.TOOLS[p.tool()]["name"]], UIKit.YELLOW, 26, 1.4)
+		_toast(tr("%s não serve para isso. Use: %s") % [tr(Defs.TOOLS[selected]["name"]), tr(Defs.TOOLS[p.tool()]["name"])], UIKit.YELLOW, 26, 1.4)
 		return
 	if now - last_mistake < 0.8:
 		return
@@ -1353,6 +1370,7 @@ func _wrong(p: Problem, pos: Vector2) -> void:
 # =================================================================== eventos
 
 func _on_stage_done(p: Problem, fin: bool) -> void:
+	print("[log] %s etapa %d concluida%s" % [p.id, p.stage, " (fim)" if fin else ""])
 	if p == active:
 		active = null
 	if pressing:
@@ -1369,9 +1387,9 @@ func _on_stage_done(p: Problem, fin: bool) -> void:
 	var sp := cam.unproject_position(p.center())
 	_float_text("+%d" % c, sp + Vector2(0, -40), UIKit.YELLOW, 40)
 	if not fin:
-		_toast("PRONTO! Agora: %s" % Defs.TOOLS[p.tool()]["name"], UIKit.GREEN, 34, 1.2)
+		_toast(tr("PRONTO! Agora: %s") % tr(Defs.TOOLS[p.tool()]["name"]), UIKit.GREEN, 34, 1.2)
 	if combo >= 2:
-		_toast("COMBO x%d!" % combo, UIKit.PINK, 48, 0.8)
+		_toast(tr("COMBO x%d!") % combo, UIKit.PINK, 48, 0.8)
 	Sfx.play("coin", 0.05, -8)
 	GameData.vibrate(20, 0.45)
 	_update_progress()
@@ -1453,6 +1471,7 @@ func _fail() -> void:
 	h.add_child(menu)
 
 func _finish() -> void:
+	print("[log] fase %d concluida" % level)
 	finished = true
 	input_ok = false
 	pressing = false
@@ -1503,7 +1522,7 @@ func _show_result(after: Image, stars: int, reward: int) -> void:
 	var sc := CenterContainer.new()
 	sc.add_child(st)
 	vb.add_child(sc)
-	var quote := UIKit.label("\"%s\" - %s" % [Defs.THANKS.pick_random(), data["look"]["name"]], 24, UIKit.DARK, 0)
+	var quote := UIKit.label("\"%s\" - %s" % [tr(Defs.THANKS.pick_random()), tr(data["look"]["name"])], 24, UIKit.DARK, 0)
 	quote.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	quote.custom_minimum_size.x = 560
 	vb.add_child(quote)
@@ -1514,7 +1533,7 @@ func _show_result(after: Image, stars: int, reward: int) -> void:
 	var coin_lbl := UIKit.label("+%d" % reward, 44, Color("ffc43d"))
 	coins_row.add_child(coin_lbl)
 	vb.add_child(coins_row)
-	vb.add_child(UIKit.label("dor máxima: %d%%" % int(max_pain), 22, UIKit.RED if max_pain > 40 else UIKit.GREEN.darkened(0.3), 0))
+	vb.add_child(UIKit.label(tr("dor máxima: %d%%") % int(max_pain), 22, UIKit.RED if max_pain > 40 else UIKit.GREEN.darkened(0.3), 0))
 	var nxt := UIKit.btn("Próximo paciente", UIKit.GREEN, 30, Vector2(460, 84))
 	nxt.pressed.connect(_next)
 	var nc := CenterContainer.new()
@@ -1571,7 +1590,7 @@ func _share(after: Image, stars: int) -> void:
 	ba.size = Vector2(660, 660)
 	ba.set_process(false)
 	root.add_child(ba)
-	var cap := UIKit.label("Fase %d  -  %s  %s" % [level, data["look"]["name"], "★".repeat(stars)], 34, Color.WHITE, 6)
+	var cap := UIKit.label(tr("Fase %d  -  %s  %s") % [level, tr(data["look"]["name"]), "★".repeat(stars)], 34, Color.WHITE, 6)
 	cap.position = Vector2(0, 850)
 	cap.size = Vector2(720, 80)
 	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1580,6 +1599,12 @@ func _share(after: Image, stars: int) -> void:
 	await RenderingServer.frame_post_draw
 	var img := vp.get_texture().get_image()
 	vp.queue_free()
+	# janela de compartilhar do Android (plugin); sem plugin, salva na galeria
+	var share_path := ProjectSettings.globalize_path("user://compartilhar.png")
+	img.save_png(share_path)
+	if Engine.has_singleton("GGNative"):
+		if Engine.get_singleton("GGNative").share_image(share_path, tr("Olha o antes e depois no Gross to Glow!")):
+			return
 	var dir := OS.get_system_dir(OS.SYSTEM_DIR_PICTURES)
 	var path := ""
 	if dir != "":
@@ -1589,10 +1614,9 @@ func _share(after: Image, stars: int) -> void:
 			if img.save_png(path) != OK:
 				path = ""
 	if path == "":
-		path = ProjectSettings.globalize_path("user://compartilhar_%d.png" % level)
-		img.save_png(path)
+		path = share_path
 	var opened := OS.shell_open(path) == OK
-	_toast("Foto salva na galeria (GrossToGlow)!" + ("" if opened else "\nAbra a galeria para enviar"), UIKit.GREEN, 30, 2.2)
+	_toast(tr("Foto salva na galeria (GrossToGlow)!") + ("" if opened else "\n" + tr("Abra a galeria para enviar")), UIKit.GREEN, 30, 2.2)
 
 func _next() -> void:
 	GameData.current_level = level + 1
@@ -1679,9 +1703,9 @@ func _build_hud() -> void:
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top.add_theme_constant_override("separation", 4)
 	hud_root.add_child(top)
-	var head := "Fase %d  -  %s  (%s)" % [level, data["look"]["name"], Defs.PART_NAMES[data["part"]]]
+	var head: String = tr("Fase %d  -  %s  (%s)") % [level, tr(data["look"]["name"]), tr(Defs.PART_NAMES[data["part"]])]
 	if data["extreme"]:
-		head = "CHEFE! " + head
+		head = tr("CHEFE! ") + head
 	var hl := UIKit.label(head, 21, UIKit.RED.lightened(0.5) if data["extreme"] else Color.WHITE, 6)
 	hl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	top.add_child(hl)
@@ -1835,12 +1859,12 @@ func _update_labels() -> void:
 		lbl_hint.text = ""
 		return
 	var cnt := Defs.stage_count(p.id)
-	lbl_problem.text = p.pname() + ("   (etapa %d/%d)" % [p.stage + 1, cnt] if cnt > 1 else "")
+	lbl_problem.text = tr(p.pname()) + ("   " + tr("(etapa %d/%d)") % [p.stage + 1, cnt] if cnt > 1 else "")
 	if _dirt_mult(p) < 1.0:
 		lbl_hint.text = "Tá sujo em volta: limpe com o Pano primeiro!"
 	elif _hints_on():
 		var mh: String = p.cream_hint() if p.tool() == "pomada" else Defs.MECH_HINT[p.mech()]
-		lbl_hint.text = "Use: %s  -  %s (segure o botão verde)" % [Defs.TOOLS[p.tool()]["name"], mh]
+		lbl_hint.text = tr("Use: %s  -  %s (segure o botão verde)") % [tr(Defs.TOOLS[p.tool()]["name"]), tr(mh)]
 	elif selected == "":
 		lbl_hint.text = "Escolha uma ferramenta"
 	else:
@@ -1936,7 +1960,7 @@ func _pause() -> void:
 	vb.add_child(cont)
 	# opções sempre à mão: vibração, sons e música
 	var vib := UIKit.btn("", UIKit.PINK, 26, Vector2(300, 66))
-	var upd_vib := func(): vib.text = "Vibração: " + ("LIGADA" if GameData.vibrate_on else "DESLIGADA")
+	var upd_vib := func(): vib.text = tr("Vibração: LIGADA") if GameData.vibrate_on else tr("Vibração: DESLIGADA")
 	upd_vib.call()
 	vib.pressed.connect(func():
 		GameData.vibrate_on = not GameData.vibrate_on
@@ -1944,14 +1968,9 @@ func _pause() -> void:
 		upd_vib.call()
 		GameData.vibrate(120, -1.0))
 	vb.add_child(vib)
-	var vt := UIKit.btn("Testar vibração", UIKit.PINK.darkened(0.15), 24, Vector2(300, 60))
-	vt.pressed.connect(func():
-		if not GameData.vibrate_on:
-			_toast("A vibração está desligada", UIKit.YELLOW, 28, 1.2)
-		GameData.vibrate(400, -1.0, true))
-	vb.add_child(vt)
+
 	var snd := UIKit.btn("", UIKit.YELLOW, 26, Vector2(300, 66))
-	var upd_snd := func(): snd.text = "Sons: " + ("LIGADOS" if GameData.sound_on else "DESLIGADOS")
+	var upd_snd := func(): snd.text = tr("Sons: LIGADOS") if GameData.sound_on else tr("Sons: DESLIGADOS")
 	upd_snd.call()
 	snd.pressed.connect(func():
 		GameData.sound_on = not GameData.sound_on
@@ -1959,7 +1978,7 @@ func _pause() -> void:
 		upd_snd.call())
 	vb.add_child(snd)
 	var mus := UIKit.btn("", UIKit.BLUE, 26, Vector2(300, 66))
-	var upd_mus := func(): mus.text = "Música: " + ("LIGADA" if GameData.music_on else "DESLIGADA")
+	var upd_mus := func(): mus.text = tr("Música: LIGADA") if GameData.music_on else tr("Música: DESLIGADA")
 	upd_mus.call()
 	mus.pressed.connect(func():
 		Sfx.set_music_enabled(not GameData.music_on)

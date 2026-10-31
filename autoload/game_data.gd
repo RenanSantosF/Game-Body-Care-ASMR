@@ -16,6 +16,7 @@ var levels_since_ad := 0
 var sound_on := true
 var music_on := true
 var vibrate_on := true
+var language := ""          # "pt", "en" ou "es" ("" = do sistema)
 var patients_treated := 0
 
 const RUN_FLAG := "user://running.flag"
@@ -28,6 +29,7 @@ func _ready() -> void:
 		crash_report = _last_log_tail()
 	_mark_running(true)
 	load_game()
+	set_language(language, false)
 	current_level = level
 	var th := Theme.new()
 	th.default_font_size = 26
@@ -68,6 +70,16 @@ func _last_log_tail() -> String:
 	var keep := lines.slice(maxi(0, lines.size() - 60))
 	var info := "Gross to Glow %s | %s | %s\n" % [ProjectSettings.get_setting("application/config/version", "?"), OS.get_model_name(), OS.get_version()]
 	return info + "\n".join(keep)
+
+## Idioma do jogo: o escolhido nas opções ou o do celular (português, espanhol; senão inglês)
+func set_language(lang: String, save := true) -> void:
+	if lang == "":
+		var sys := OS.get_locale_language()
+		lang = sys if sys in ["pt", "es"] else "en"
+	language = lang
+	TranslationServer.set_locale(lang)
+	if save:
+		save_game()
 
 func add_coins(n: int) -> void:
 	coins = maxi(0, coins + n)
@@ -157,13 +169,17 @@ func vibrate(ms: int, amp := -1.0, force := false) -> void:
 	if amp >= 0.75:
 		amp = -1.0
 	_vib_until = now + ms
-	Input.vibrate_handheld(ms, amp)
+	# plugin nativo (vibra mesmo com a "vibração de mídia" desligada no celular); senão, a do Godot
+	if Engine.has_singleton("GGNative"):
+		Engine.get_singleton("GGNative").vibrate(ms, -1 if amp < 0.0 else int(amp * 255.0))
+	else:
+		Input.vibrate_handheld(ms, amp)
 
 func save_game() -> void:
 	var d := {
 		"coins": coins, "level": level, "stars": stars, "owned": owned,
 		"streak": streak, "last_daily": last_daily, "levels_since_ad": levels_since_ad,
-		"sound_on": sound_on, "music_on": music_on, "vibrate_on": vibrate_on, "patients": patients_treated,
+		"sound_on": sound_on, "music_on": music_on, "vibrate_on": vibrate_on, "language": language, "patients": patients_treated,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -190,4 +206,5 @@ func load_game() -> void:
 	sound_on = bool(d.get("sound_on", true))
 	music_on = bool(d.get("music_on", true))
 	vibrate_on = bool(d.get("vibrate_on", true))
+	language = str(d.get("language", ""))
 	patients_treated = int(d.get("patients", 0))

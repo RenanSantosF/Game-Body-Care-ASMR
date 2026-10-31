@@ -413,10 +413,47 @@ func pick(screen_pos: Vector2, radius_px: float, cam: Camera3D) -> bool:
 				bd = d
 				best = it
 	if best != null:
-		_remove_item(best)
-		_after_items()
+		if best.get("busy", false):
+			return false
+		best["busy"] = true
+		_pick_anim(best)
 		return true
 	return false
+
+var pick_pull_pos := Vector3(0, -10, 0)   # pele esticando junto com o que a pinça puxa
+var pick_pull_amt := 0.0
+
+## Retirada com animação: a pinça pega e PUXA devagar (pele estica), depois solta.
+## Espremedor: aperta um instante e estoura.
+func _pick_anim(it: Dictionary) -> void:
+	var nd: Node3D = it.get("node")
+	var t0 := tool()
+	if nd == null or not is_instance_valid(nd) or not (t0 in ["pinca", "espremedor"]):
+		_remove_item(it)
+		_after_items()
+		return
+	var tw := create_tween()
+	if t0 == "pinca":
+		var start := nd.global_position
+		var out := start + global_basis.y.normalized() * 0.03
+		pick_pull_pos = start
+		tw.tween_method(func(k: float):
+			if is_instance_valid(nd):
+				nd.global_position = start.lerp(out, k * k)
+				nd.rotation.z = sin(k * 18.0) * 0.08 * (1.0 - k)
+			pick_pull_amt = 0.012 * sin(k * PI), 0.0, 1.0, 0.32)
+		GameData.vibrate(20, 0.35)
+		Sfx.play_throttled("pull", 0.1, 0.3, -10)
+	else:
+		var s0 := nd.scale
+		tw.tween_property(nd, "scale", s0 * Vector3(1.15, 0.7, 1.15), 0.12)
+		tw.tween_property(nd, "scale", s0 * Vector3(0.95, 1.2, 0.95), 0.06)
+		GameData.vibrate(18, 0.35)
+	tw.tween_callback(func():
+		pick_pull_amt = 0.0
+		if it["alive"]:
+			_remove_item(it)
+			_after_items())
 
 func _add(x: float) -> void:
 	if done:
@@ -1263,6 +1300,13 @@ func _build_espinhos() -> void:
 		MeshGen.inst(nd, MeshGen.tube(pts, PackedFloat32Array([0.0022, 0.0016, 0.0004]), 5), tm)
 		MeshGen.inst(nd, MeshGen.sphere(1.0), MeshGen.std(Color(0.7, 0.12, 0.12), 0.4), Vector3.ZERO, Vector3(0.006, 0.002, 0.006))
 		items.append({"node": nd, "pos": sp[0], "alive": true})
+	# sangue: começa limpo e brota um pinguinho em cada furo de espinho tirado
+	n["blood"] = _lesion(L_BLOOD, size * 1.05, Vector2.ZERO, true, 0.009)
+	_lmat(n["blood"]).set_shader_parameter("strength", 0.8)
+	var bmk: CleanMask = n["blood"].get_meta("mask")
+	bmk.img.fill(Color(1, 1, 1, 1))
+	bmk.dirty = true
+	bmk.flush()
 	items_left = items.size()
 
 func _build_unha_roxa() -> void:
@@ -1339,7 +1383,8 @@ func _build_acne_costas() -> void:
 		var sp2 := _surf_near(Vector2(cos(a2), sin(a2)) * sqrt(rng.randf()) * size * 1.1)
 		if sp2.is_empty():
 			continue
-		MeshGen.inst(body, MeshGen.sphere(1.0), dark, sp2[0], Vector3(0.0055, 0.002, 0.0055))
+		var bh := MeshGen.inst(body, MeshGen.sphere(1.0), dark, sp2[0], Vector3(0.0055, 0.002, 0.0055))
+		n.get_or_add("blackheads", []).append(bh)
 	items_left = items.size()
 
 func _build_queimadura() -> void:
@@ -1466,7 +1511,7 @@ func _build_piolhos() -> void:
 ## Piolhos andando devagar pelo couro cabeludo (dá para pegar, mas fogem um pouco)
 func _place_lice(delta: float) -> void:
 	for it in items:
-		if not it["alive"]:
+		if not it["alive"] or it.get("busy", false):
 			continue
 		var nd: Node3D = it["node"]
 		it["head"] += rng.randf_range(-1.0, 1.0) * delta * 4.0
@@ -1586,6 +1631,13 @@ func after_effect(wpos: Vector3, t: String) -> bool:
 		"pomada":
 			_spread_cream(wpos, 0.06, false)
 		"lixa", "raspador":
+			# unha (micose/sujeira): continua lixando o que sobrou
+			if not nail.is_empty() and n.has("mask"):
+				var lp: Vector3 = (nail["node"] as Node3D).to_local(wpos)
+				var w: float = nail["w"]
+				var mk: CleanMask = n["mask"]
+				mk.paint(Vector2(lp.x / (w * 0.5), lp.z / nail["len"] / 1.6 * 2.0 - 1.0), 0.05 / (w * 0.5), 0.5)
+				mk.flush()
 			for key in ["callus", "crust"]:
 				if n.has(key) and is_instance_valid(n[key]):
 					var m := _lmat(n[key])
@@ -1642,7 +1694,7 @@ func cream_spread() -> float:
 
 func cream_hint() -> String:
 	if not cream_ready():
-		return "Aperte a pomada sobre a ferida (%d/%d)" % [n.get("dollops", []).size(), DOLLOPS]
+		return tr("Aperte a pomada sobre a ferida (%d/%d)") % [n.get("dollops", []).size(), DOLLOPS]
 	return "Agora ESPALHE a pomada por toda a ferida!"
 
 func _add_dollop(wpos: Vector3) -> void:
@@ -1792,6 +1844,7 @@ func _rub_target() -> MeshInstance3D:
 		"espinha", "cisto", "furunculo", "abscesso", "carbunculo", "unha_pus", "unha_encravada", "unha_roxa": return n.get("splat")
 		"acne_costas", "pontos": return n.get("splat") if stage == 1 else null
 		"piolhos": return n.get("blood") if stage == 1 else null
+		"queimadura": return n.get("splat") if stage == 2 else null
 		"caspa": return n.get("crust") if stage == 0 else null
 		"ralado": return n.get("grime") if stage == 1 else null
 		"bicho_pe", "espinhos": return n.get("blood")
@@ -1897,7 +1950,7 @@ func _visual() -> void:
 				if rng.randf() < 0.25:
 					var bl2: MeshInstance3D = n["blisters"].pick_random()
 					_burst(bl2.global_position + Vector3.UP * 0.01, Color(1, 1, 0.95, 0.7), 2, 0.3, 0.006, 60.0)
-			elif stage == 2:
+			elif stage == 3:
 				_lset("burn", "heal", p * 0.6)
 				_lset("red", "heal", p * 0.5)
 		"pelo_encravado":
@@ -2068,6 +2121,11 @@ func _remove_item(it: Dictionary) -> void:
 			_fly_off(it["node"])
 			_burst(it["pos"], BLOOD_C, 2, 0.25, 0.004, 40.0)
 			Sfx.play("pull", 0.3, -8)
+			if n.has("blood"):
+				var bm: MeshInstance3D = n["blood"]
+				var bk: CleanMask = bm.get_meta("mask")
+				bk.unpaint(host_uv(bm, it["pos"]), 0.02 / bm.get_meta("half"), 0.9)
+				bk.flush()
 		"acne_costas":
 			# espremida: a cabeça estoura, o pus sai em fio e voa gotinha
 			var nd3: Node3D = it["node"]
@@ -2135,9 +2193,8 @@ func _on_stage_start(s: int) -> void:
 			if s == 1 and n.has("splat"):
 				n["splat"].set_meta("c0", (n["splat"].get_meta("mask") as CleanMask).coverage())
 		"espinhos":
-			if s == 1:
-				n["blood"] = _lesion(L_BLOOD, size * 1.0, Vector2.ZERO, true, 0.009)
-				_lmat(n["blood"]).set_shader_parameter("strength", 0.7)
+			if s == 1 and n.has("blood"):
+				n["blood"].set_meta("c0", (n["blood"].get_meta("mask") as CleanMask).coverage())
 
 func _on_stage_end(s: int) -> void:
 	if def["stages"][s].size() > 3:
@@ -2181,7 +2238,7 @@ func _on_stage_end_rest(s: int) -> void:
 				var fx: FxMap = h.get_meta("fx")
 				fx.bleed = 0.0
 				fx.drips.clear()
-		for key in ["splat", "splat2", "grime"]:
+		for key in ["splat", "splat2", "grime", "blood"]:
 			if n.has(key) and is_instance_valid(n[key]):
 				_heal_lesion(key, 0.85, 0.9)
 		for d in domes:
@@ -2382,6 +2439,9 @@ func _on_done() -> void:
 				tw.tween_property(bl, "scale", bl.scale * Vector3(1, 0.05, 1), 1.0)
 		"caspa":
 			_fade_lesion("crust", 0.9)
+		"acne_costas":
+			for bh in n.get("blackheads", []):
+				create_tween().tween_property(bh, "scale", Vector3.ZERO, 0.8)
 		"pelos", "barba":
 			# depois de raspar fica a barbinha
 			var st := _lesion(15, size * 1.3, Vector2.ZERO, false, 0.003)

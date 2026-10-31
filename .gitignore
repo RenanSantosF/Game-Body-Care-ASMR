@@ -6,3 +6,6 @@ build/
 android/build/
 assets/body/*.json
 !assets/body/*_meta.json
+android/
+plugin_src/.gradle/
+plugin_src/local.properties

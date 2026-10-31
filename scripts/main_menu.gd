@@ -64,12 +64,12 @@ func _ready() -> void:
 	Sfx.play_music("menu")
 	var tag := UIKit.label("Do nojento ao brilhante!", 28, Color.WHITE, 6)
 	center.add_child(tag)
-	var sub := UIKit.label("Pacientes atendidos: %d  |  Estrelas: %d" % [GameData.patients_treated, GameData.total_stars()], 22, Color(1, 1, 1, 0.9), 5)
+	var sub := UIKit.label(tr("Pacientes atendidos: %d  |  Estrelas: %d") % [GameData.patients_treated, GameData.total_stars()], 22, Color(1, 1, 1, 0.9), 5)
 	center.add_child(sub)
 
 	var play_row := UIKit.hbox()
 	play_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var play := UIKit.btn("JOGAR  -  Fase %d" % GameData.level, UIKit.GREEN, 44, Vector2(540, 120))
+	var play := UIKit.btn(tr("JOGAR  -  Fase %d") % GameData.level, UIKit.GREEN, 44, Vector2(540, 120))
 	play.pressed.connect(func(): _start(GameData.level))
 	play_row.add_child(play)
 	center.add_child(play_row)
@@ -162,7 +162,7 @@ func _daily() -> void:
 	var vb: VBoxContainer = m[1]
 	vb.add_child(UIKit.label("BÔNUS DIÁRIO!", 48, UIKit.YELLOW))
 	var next := GameData.streak + 1 if GameData.last_daily == GameData._yesterday() else 1
-	vb.add_child(UIKit.label("Dia %d seguido" % next, 30, UIKit.DARK, 0))
+	vb.add_child(UIKit.label(tr("Dia %d seguido") % next, 30, UIKit.DARK, 0))
 	var amount := GameData.daily_reward()
 	var row := UIKit.hbox(8)
 	var ic := UIKit.CoinIcon.new()
@@ -209,7 +209,7 @@ func _levels() -> void:
 		var col := UIKit.RED if LevelGen.is_extreme(i) else UIKit.BLUE
 		var txt := str(i) if unlocked else "?"
 		if LevelGen.is_extreme(i):
-			txt += "\nCHEFE"
+			txt += "\n" + tr("CHEFE")
 		var b := UIKit.btn(txt, col, 26 if LevelGen.is_extreme(i) else 34, Vector2(122, 110))
 		b.disabled = not unlocked
 		if unlocked:
@@ -280,10 +280,10 @@ func _tool_card(id: String) -> Control:
 	var owned := GameData.has_tool(id)
 	var lvl := GameData.tool_level(id)
 	if owned:
-		vb.add_child(UIKit.label("Nível %d/3  (velocidade x%.2f)" % [lvl, GameData.speed_mult(id)], 18, UIKit.GREEN.darkened(0.3), 0))
+		vb.add_child(UIKit.label(tr("Nível %d/3  (velocidade x%.2f)") % [lvl, GameData.speed_mult(id)], 18, UIKit.GREEN.darkened(0.3), 0))
 		if lvl < 3:
 			var price := Defs.upgrade_price(id, lvl)
-			var b := UIKit.btn("Melhorar %d" % price, UIKit.GREEN, 22, Vector2(190, 64))
+			var b := UIKit.btn(tr("Melhorar %d") % price, UIKit.GREEN, 22, Vector2(190, 64))
 			b.disabled = GameData.coins < price
 			b.pressed.connect(func():
 				if GameData.spend(price):
@@ -296,8 +296,8 @@ func _tool_card(id: String) -> Control:
 	else:
 		icon.locked = GameData.level < d["unlock"]
 		if GameData.level < d["unlock"]:
-			vb.add_child(UIKit.label("Libera na fase %d" % d["unlock"], 20, UIKit.RED, 0))
-		var b := UIKit.btn("Comprar %d" % d["price"], UIKit.BLUE, 22, Vector2(190, 60))
+			vb.add_child(UIKit.label(tr("Libera na fase %d") % d["unlock"], 20, UIKit.RED, 0))
+		var b := UIKit.btn(tr("Comprar %d") % d["price"], UIKit.BLUE, 22, Vector2(190, 60))
 		b.disabled = GameData.coins < d["price"]
 		b.pressed.connect(func():
 			if GameData.spend(d["price"]):
@@ -324,10 +324,12 @@ func _settings() -> void:
 	var mus := UIKit.btn("", UIKit.PINK, 28, Vector2(360, 76))
 	var snd := UIKit.btn("", UIKit.BLUE, 28, Vector2(360, 76))
 	var vib := UIKit.btn("", UIKit.BLUE, 28, Vector2(360, 76))
+	var lang := UIKit.btn("", UIKit.GREEN, 28, Vector2(360, 76))
 	var refresh := func():
-		mus.text = "Música: " + ("LIGADA" if GameData.music_on else "DESLIGADA")
-		snd.text = "Som: " + ("LIGADO" if GameData.sound_on else "DESLIGADO")
-		vib.text = "Vibração: " + ("LIGADA" if GameData.vibrate_on else "DESLIGADA")
+		lang.text = tr("Idioma: Português")
+		mus.text = tr("Música: LIGADA") if GameData.music_on else tr("Música: DESLIGADA")
+		snd.text = tr("Som: LIGADO") if GameData.sound_on else tr("Som: DESLIGADO")
+		vib.text = tr("Vibração: LIGADA") if GameData.vibrate_on else tr("Vibração: DESLIGADA")
 	refresh.call()
 	snd.pressed.connect(func():
 		GameData.sound_on = not GameData.sound_on
@@ -341,6 +343,12 @@ func _settings() -> void:
 		Sfx.set_music_enabled(not GameData.music_on)
 		GameData.save_game()
 		refresh.call())
+	lang.pressed.connect(func():
+		# Português -> English -> Español
+		var order := ["pt", "en", "es"]
+		GameData.set_language(order[(order.find(GameData.language) + 1) % order.size()])
+		get_tree().reload_current_scene())
+	vb.add_child(lang)
 	vb.add_child(mus)
 	vb.add_child(snd)
 	vb.add_child(vib)

@@ -39,7 +39,7 @@ func _draw() -> void:
 			var s := r * 1.05
 			draw_texture_rect(tex, Rect2(center - Vector2(s, s) * 0.5 + Vector2(0, -10), Vector2(s, s)), false)
 	var f := get_theme_default_font()
-	var label := "USANDO" if held else "SEGURE"
+	var label := tr("USANDO") if held else tr("SEGURE")
 	var w := f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x
 	draw_string_outline(f, center + Vector2(-w * 0.5, r * 0.62), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, 6, Color(0.1, 0.25, 0.12))
 	draw_string(f, center + Vector2(-w * 0.5, r * 0.62), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE)

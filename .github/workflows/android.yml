@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android (APK + AAB)
 
 on:
   push:
@@ -31,7 +31,7 @@ jobs:
           path: |
             ~/godot
             ~/.local/share/godot/export_templates
-          key: godot-${{ env.GODOT_VERSION }}-android
+          key: godot-${{ env.GODOT_VERSION }}-android-gradle
 
       - name: Baixar Godot e templates
         if: steps.cache-godot.outputs.cache-hit != 'true'
@@ -42,8 +42,15 @@ jobs:
           unzip -q godot.zip && rm godot.zip
           mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 godot
           curl -sSL -o tpl.tpz https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
-          unzip -q -j tpl.tpz "templates/android_debug.apk" "templates/android_release.apk" "templates/version.txt" -d ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          unzip -q -j tpl.tpz "templates/android_debug.apk" "templates/android_release.apk" "templates/android_source.zip" "templates/version.txt" -d ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
           rm tpl.tpz
+
+      - name: Modelo de build Android (Gradle) - necessário para o plugin de anúncios
+        run: |
+          mkdir -p android/build
+          unzip -q -o ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/android_source.zip -d android/build
+          touch android/build/.gdignore
+          printf "%s.stable" "$GODOT_VERSION" > android/.build_version
 
       - name: Chave de assinatura
         env:
@@ -70,17 +77,38 @@ jobs:
           export/android/debug_keystore_pass = "android"
           EOT
 
-      - name: Importar e exportar
+      - name: Importar e exportar APK de teste (anúncios de teste)
         run: |
           mkdir -p build
           ~/godot/godot --headless --editor --quit --path . || true
           ~/godot/godot --headless --path . --export-debug "Android" build/GrossToGlow.apk
           ls -la build
 
+      # AAB de publicação: cadastre nos segredos do repositório UPLOAD_KEYSTORE_B64 (base64 do .jks)
+      # e UPLOAD_KEYSTORE_PASSWORD. Sem eles, este passo é pulado.
+      - name: Exportar AAB para a Play Store
+        env:
+          UPLOAD_KEYSTORE_B64: ${{ secrets.UPLOAD_KEYSTORE_B64 }}
+          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
+        if: env.UPLOAD_KEYSTORE_B64 != ''
+        run: |
+          echo "$UPLOAD_KEYSTORE_B64" | base64 -d > ~/keys/upload.jks
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$HOME/keys/upload.jks
+          export GODOT_ANDROID_KEYSTORE_RELEASE_USER=upload
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD="$UPLOAD_KEYSTORE_PASSWORD"
+          ~/godot/godot --headless --path . --export-release "Android AAB" build/GrossToGlow.aab
+          ls -la build
+
       - uses: actions/upload-artifact@v4
         with:
           name: GrossToGlow-apk
           path: build/GrossToGlow.apk
+
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('build/GrossToGlow.aab') != ''
+        with:
+          name: GrossToGlow-aab
+          path: build/GrossToGlow.aab
 
       - name: Publicar release (tags v*)
         if: startsWith(github.ref, 'refs/tags/v')

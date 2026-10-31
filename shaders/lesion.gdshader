@@ -313,7 +313,8 @@ void fragment() {
 	// brilho molhado logo depois de limpar
 	float wt = wet * m;
 	a *= COLOR.a;
-	float wa = wt * 0.35 * COLOR.a;
+	// brilho molhado discreto e só no meio (não vira um disco prateado)
+	float wa = wt * 0.12 * (1.0 - smoothstep(0.55, 1.0, r)) * COLOR.a;
 	if (a < 0.01 && wa < 0.01) {
 		discard;
 	}

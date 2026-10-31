@@ -1,0 +1,37 @@
+// Plugin Android próprio do Gross to Glow (Godot 4.3, plugin v2):
+// anúncios AdMob (intersticial + premiado) com consentimento UMP, vibração nativa e compartilhar imagem.
+// Gerar: ./gradlew assembleRelease  ->  copiar build/outputs/aar/gg_native-release.aar para addons/gg_native/bin/
+plugins {
+    id 'com.android.library' version '8.2.0'
+}
+
+android {
+    namespace 'com.grosstoglow.gg'
+    compileSdk 34
+    defaultConfig {
+        minSdk 21
+        targetSdk 34
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        release { minifyEnabled false }
+    }
+}
+
+dependencies {
+    // fornecidas pelo jogo na exportação (addons/gg_native/export_plugin.gd)
+    compileOnly 'org.godotengine:godot:4.3.0.stable'
+    compileOnly 'com.google.android.gms:play-services-ads:23.6.0'
+    compileOnly 'com.google.android.ump:user-messaging-platform:3.1.0'
+    compileOnly 'androidx.core:core:1.13.1'
+}
+
+// não precisa do lint (evita baixar dependências extras)
+tasks.configureEach { t ->
+    if (t.name.contains("Lint") || t.name.startsWith("lint")) {
+        t.enabled = false
+    }
+}

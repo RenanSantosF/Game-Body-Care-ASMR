@@ -282,9 +282,10 @@ func _drape() -> void:
 	var lv := xf.basis.inverse() * vel
 	lv.y = 0.0
 	var spd := lv.length()
-	_fold_ph += spd * 9.0 * get_process_delta_time() * 60.0 + get_process_delta_time() * 0.8
+	# dobras andam devagar com o movimento (antes giravam rápido como hélice)
+	_fold_ph += minf(spd, 1.5) * 1.2 * get_process_delta_time() + get_process_delta_time() * 0.3
 	_squish = move_toward(_squish, 1.0 if (active and grip) else 0.0, get_process_delta_time() * 6.0)
-	var drag := lv.limit_length(0.6) * -0.05
+	var drag := lv.limit_length(0.6) * -0.035
 	for i in src.size():
 		var q := src[i]
 		var r := Vector2(q.x, q.z).length() / CLOTH_R
@@ -342,8 +343,6 @@ func _process(delta: float) -> void:
 				parts["ball"].scale = Vector3((1.0 + sin(t * 20.0) * 0.06) * (2.0 - sq) * 0.95, (1.0 - sin(t * 20.0) * 0.08) * sq, (2.0 - sq) * 0.95)
 		"pano":
 			# esfrega deslizando (sem girar para dentro da pele) e molda o tecido à pele
-			if active and grip:
-				root.position = Vector3(sin(t * 18.0) * 0.008, 0.0, cos(t * 15.0) * 0.006)
 			_drape()
 		"lamina", "raspador":
 			if active:

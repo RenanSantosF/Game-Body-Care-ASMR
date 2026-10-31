@@ -66,8 +66,8 @@ func _draw() -> void:
 		var p := c + Vector2(sgn * 9, 0)
 		draw_colored_polygon(PackedVector2Array([p + Vector2(sgn * 7, 0), p + Vector2(0, -7), p + Vector2(0, 7)]), Color.WHITE)
 	if show_labels and _font:
-		_tag("ANTES", Vector2(14, 16), Color("e8505b"), split > 0.2)
-		_tag("DEPOIS", Vector2(size.x - 14, 16), Color("3fbf7f"), split < 0.8, true)
+		_tag(tr("ANTES"), Vector2(14, 16), Color("e8505b"), split > 0.2)
+		_tag(tr("DEPOIS"), Vector2(size.x - 14, 16), Color("3fbf7f"), split < 0.8, true)
 
 func _tag(t: String, at: Vector2, col: Color, vis: bool, right := false) -> void:
 	if not vis:

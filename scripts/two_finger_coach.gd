@@ -71,8 +71,8 @@ func _draw() -> void:
 		_finger(c + Vector2(sin(t * 2.0) * 20.0, 0), "1", Color("4fb3ff"))
 		var pulse := 0.5 + 0.5 * sin(t * 6.0)
 		draw_arc(tap, 95 + pulse * 14.0, 0, TAU, 40, Color(0.3, 0.95, 0.5, 0.7 * a), 7.0, true)
-		_text(Vector2(size.x * 0.5, size.y * 0.41), "Um dedo MIRA a ferramenta", 30, Color("bfe3ff"))
-		_text(Vector2(size.x * 0.5, size.y * 0.66), "Segure o botão verde para USAR", 30, Color("c6ffd6"))
+		_text(Vector2(size.x * 0.5, size.y * 0.41), tr("Um dedo MIRA a ferramenta"), 30, Color("bfe3ff"))
+		_text(Vector2(size.x * 0.5, size.y * 0.66), tr("Segure o botão verde para USAR"), 30, Color("c6ffd6"))
 		return
 	if showing:
 		var pulse2 := 0.5 + 0.5 * sin(t * 7.0)
@@ -81,5 +81,5 @@ func _draw() -> void:
 			# setinha do dedo 1 até onde tocar com o 2
 			var d := (tap - aim).normalized()
 			draw_line(aim + d * 40.0, tap - d * 50.0, Color(1, 1, 1, 0.6 * a), 4.0, true)
-		_text(Vector2(tap.x + 120, tap.y - 110), "SEGURE ESTE BOTÃO", 28, Color("fff3b0"))
-		_text(Vector2(tap.x + 120, tap.y - 75), "para %s" % VERB.get(tool_id, "usar"), 24)
+		_text(Vector2(tap.x + 120, tap.y - 110), tr("SEGURE ESTE BOTÃO"), 28, Color("fff3b0"))
+		_text(Vector2(tap.x + 120, tap.y - 75), tr("para %s") % tr(VERB.get(tool_id, "usar")), 24)
