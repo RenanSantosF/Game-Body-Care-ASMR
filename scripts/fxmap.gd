@@ -106,7 +106,7 @@ func wipe(uv: Vector2, r_px: float, amount: float) -> void:
 	wmask.blend_rect(b, Rect2i(0, 0, px, px), Vector2i(p))
 	wdirty = true
 	wiped = 1.0
-	bleed *= 0.95
+	bleed *= 0.85
 
 func blood_total() -> float:
 	var s := 0.0

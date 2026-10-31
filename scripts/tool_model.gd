@@ -10,6 +10,14 @@ var t := 0.0
 var root: Node3D
 var parts := {}
 var spray_fx: CPUParticles3D
+const BLADE_W := 0.1             # largura das lâminas do barbeador (área que corta)
+
+## Linha das lâminas do barbeador no mundo: [ponta_esq, ponta_dir] ou []
+func blade_segment() -> Array:
+	if tool_id != "lamina" or not parts.has("head"):
+		return []
+	var h: Node3D = parts["head"]
+	return [h.to_global(Vector3(-BLADE_W * 0.5, 0.012, 0)), h.to_global(Vector3(BLADE_W * 0.5, 0.012, 0))]
 
 func _metal() -> StandardMaterial3D:
 	return MeshGen.std(Color(0.82, 0.85, 0.9), 0.22, 0.85, "metal")
@@ -42,7 +50,7 @@ func set_tool(id: String) -> void:
 			parts["cloth"] = cloth
 			var fm := MeshGen.shader_mat("res://shaders/fabric.gdshader")
 			fm.set_shader_parameter("kind", 0)
-			fm.set_shader_parameter("base", Color("8cc9ef"))
+			fm.set_shader_parameter("base", Color("9fd3f2"))
 			var cm := _cloth_mesh()
 			parts["cloth_mi"] = MeshGen.inst(cloth, cm, fm)
 			parts["cloth_base"] = cm.surface_get_arrays(0)
@@ -99,13 +107,26 @@ func set_tool(id: String) -> void:
 			_sph(root, Vector3(0.11, 0.012, 0.045), MeshGen.std(Problem.BAND, 0.8), Vector3(0, 0.012, 0))
 			_sph(root, Vector3(0.04, 0.014, 0.038), MeshGen.std(Color("fbf4ea"), 0.9), Vector3(0, 0.016, 0))
 		"lamina":
+			# aparelho de barbear: cartucho com 3 lâminas, fita lubrificante, protetor com aletas
 			var head := Node3D.new()
 			root.add_child(head)
 			parts["head"] = head
-			MeshGen.inst(head, MeshGen.sphere(1.0), _plastic(Color("9b7bff")), Vector3(0, 0.02, 0), Vector3(0.16, 0.018, 0.03))
-			var blade := MeshGen.inst(head, BoxMesh.new(), metal, Vector3(0, 0.006, 0.0), Vector3(0.3, 0.004, 0.022))
-			blade.name = "blade"
-			_cyl(root, 0.014, 0.36, _plastic(Color("9b7bff")), Vector3(0, 0.21, 0.0))
+			var dark := _plastic(Color("2b2f3a"))
+			var accent := _plastic(Color("3d8bff"))
+			MeshGen.inst(head, BoxMesh.new(), dark, Vector3(0, 0.007, 0), Vector3(BLADE_W + 0.012, 0.009, 0.034))
+			_sph(head, Vector3(0.008, 0.0075, 0.017), dark, Vector3(-(BLADE_W + 0.012) * 0.5, 0.007, 0))
+			_sph(head, Vector3(0.008, 0.0075, 0.017), dark, Vector3((BLADE_W + 0.012) * 0.5, 0.007, 0))
+			for k in 3:
+				var bl := MeshGen.inst(head, BoxMesh.new(), metal, Vector3(0, 0.0122, -0.007 + k * 0.0065), Vector3(BLADE_W, 0.0014, 0.0032))
+				if k == 0:
+					bl.name = "blade"
+			MeshGen.inst(head, BoxMesh.new(), _plastic(Color("7fe0c8")), Vector3(0, 0.0125, 0.0125), Vector3(BLADE_W, 0.003, 0.006))
+			for k in 9:
+				MeshGen.inst(head, BoxMesh.new(), accent, Vector3(-BLADE_W * 0.45 + k * BLADE_W * 0.1125, 0.0115, -0.0135), Vector3(0.005, 0.003, 0.004))
+			_cyl(root, 0.006, 0.045, dark, Vector3(0, 0.033, 0.006))
+			_cyl(root, 0.0105, 0.26, accent, Vector3(0, 0.19, 0.012))
+			for k in 4:
+				_cyl(root, 0.0118, 0.016, dark, Vector3(0, 0.12 + k * 0.042, 0.012))
 		"alicate":
 			var jaw_a := Node3D.new()
 			root.add_child(jaw_a)
@@ -137,6 +158,8 @@ func set_tool(id: String) -> void:
 			_cyl(tb, 0.035, 0.08, _plastic(Color("4cd07d")), Vector3(0, 0.25, 0))
 			_cyl(tb, 0.012, 0.04, _plastic(Color("4cd07d")), Vector3(0, 0.06, 0), 0.008)
 			_sph(tb, Vector3(0.02, 0.012, 0.02), MeshGen.std(Color(1, 1, 1), 0.2), Vector3(0, 0.03, 0))
+			# bolinha de creme saindo do bico enquanto aperta
+			parts["blob"] = _sph(root, Vector3(0.016, 0.012, 0.016), MeshGen.std(Color(0.98, 0.97, 0.94), 0.25, 0.0, "cream_blob"), Vector3(0, 0.004, 0))
 		"lixa":
 			var board := Node3D.new()
 			root.add_child(board)
@@ -193,26 +216,32 @@ func soil(c: Color, amt: float) -> void:
 	m.set_shader_parameter("soil_col", cc)
 
 ## Pano dobrado: tecido com pregas, apertado embaixo e solto em cima
+## Paninho dobrado na ponta dos dedos: almofada com dobras em volta (malha polar)
+const CLOTH_RINGS := 9
+const CLOTH_SEGS := 36
+const CLOTH_R := 0.072
+
 func _cloth_mesh() -> ArrayMesh:
-	var res := 16
 	var verts := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var idx := PackedInt32Array()
-	for j in res + 1:
-		for i in res + 1:
-			var u := float(i) / res
-			var v := float(j) / res
-			var x := (u - 0.5) * 0.17
-			var z := (v - 0.5) * 0.13
-			var r := Vector2(x / 0.085, z / 0.065).length()
-			# centro encostado na pele, bordas sobem (dedos segurando) com pregas
-			var y := pow(r, 2.2) * 0.07 + sin(u * 19.0 + v * 3.0) * 0.006 * r + sin(v * 13.0) * 0.004 * r
-			verts.append(Vector3(x, y + 0.004, z))
-			uvs.append(Vector2(u, v))
-	for j in res:
-		for i in res:
-			var a := j * (res + 1) + i
-			idx.append_array([a, a + 1, a + res + 1, a + 1, a + res + 2, a + res + 1])
+	verts.append(Vector3(0, 0.026, 0))
+	uvs.append(Vector2(0.5, 0.5))
+	for ri in range(1, CLOTH_RINGS + 1):
+		var r := float(ri) / CLOTH_RINGS
+		for si in CLOTH_SEGS:
+			var a := TAU * si / CLOTH_SEGS
+			var rr := CLOTH_R * r * (1.0 + 0.13 * cos(a * 4.0))
+			verts.append(Vector3(cos(a) * rr, 0.0, sin(a) * rr))
+			uvs.append(Vector2(0.5 + cos(a) * r * 0.5, 0.5 + sin(a) * r * 0.5))
+	for si in CLOTH_SEGS:
+		idx.append_array([0, 1 + (si + 1) % CLOTH_SEGS, 1 + si])
+	for ri in range(1, CLOTH_RINGS):
+		var b0 := 1 + (ri - 1) * CLOTH_SEGS
+		var b1 := 1 + ri * CLOTH_SEGS
+		for si in CLOTH_SEGS:
+			var s2 := (si + 1) % CLOTH_SEGS
+			idx.append_array([b0 + si, b0 + s2, b1 + si, b0 + s2, b1 + s2, b1 + si])
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = verts
@@ -222,6 +251,10 @@ func _cloth_mesh() -> ArrayMesh:
 	st.create_from_arrays(arr)
 	st.generate_normals()
 	return st.commit()
+
+var vel := Vector3.ZERO           # velocidade da ferramenta (mundo), para o pano arrastar
+var _fold_ph := 0.0
+var _squish := 0.0
 
 var drape_body: Body
 
@@ -237,8 +270,22 @@ func _drape() -> void:
 	var lift := 0.005 * xf.basis.get_scale().y
 	var out := PackedVector3Array()
 	out.resize(src.size())
+	# esfregando: dobras giram com o movimento, borda arrasta atrás, almofada amassa
+	var lv := xf.basis.inverse() * vel
+	lv.y = 0.0
+	var spd := lv.length()
+	_fold_ph += spd * 9.0 * get_process_delta_time() * 60.0 + get_process_delta_time() * 0.8
+	_squish = move_toward(_squish, 1.0 if (active and grip) else 0.0, get_process_delta_time() * 6.0)
+	var drag := lv.limit_length(0.6) * -0.05
 	for i in src.size():
-		var w := xf * src[i]
+		var q := src[i]
+		var r := Vector2(q.x, q.z).length() / CLOTH_R
+		var ang := atan2(q.z, q.x)
+		var dome := 0.03 * pow(maxf(0.0, 1.0 - r * r), 0.7)
+		var fold := sin(ang * 9.0 + _fold_ph + sin(ang * 3.0) * 1.5) * 0.007 * r * r
+		var lagk := pow(r, 1.5)
+		q = Vector3(q.x * (1.0 + _squish * 0.12) + drag.x * lagk, dome * (1.0 - _squish * 0.35) + fold * (1.0 + _squish * 0.6) + 0.004, q.z * (1.0 + _squish * 0.12) + drag.z * lagk)
+		var w := xf * q
 		var sp := drape_body.surface(w.x, w.z)
 		if not sp.is_empty():
 			var top: float = sp[0].y + lift
@@ -281,11 +328,13 @@ func _process(delta: float) -> void:
 			if active:
 				root.rotation.z = sin(t * 18.0) * 0.18
 				root.rotation.x = cos(t * 15.0) * 0.12
-				parts["ball"].scale = Vector3(1.0 + sin(t * 20.0) * 0.06, 1.0 - sin(t * 20.0) * 0.08, 1.0)
+				# algodão amassa contra a pele quando pressiona
+				var sq := 0.72 if grip else 1.0
+				parts["ball"].scale = Vector3((1.0 + sin(t * 20.0) * 0.06) * (2.0 - sq) * 0.95, (1.0 - sin(t * 20.0) * 0.08) * sq, (2.0 - sq) * 0.95)
 		"pano":
 			# esfrega deslizando (sem girar para dentro da pele) e molda o tecido à pele
-			if active:
-				root.position = Vector3(sin(t * 18.0) * 0.012, 0.0, cos(t * 15.0) * 0.008)
+			if active and grip:
+				root.position = Vector3(sin(t * 18.0) * 0.008, 0.0, cos(t * 15.0) * 0.006)
 			_drape()
 		"lamina", "raspador", "lixa":
 			if active:
@@ -299,6 +348,9 @@ func _process(delta: float) -> void:
 		"pomada":
 			if active:
 				parts["tube"].scale = Vector3(1.0 + sin(t * 10.0) * 0.06, 1.0, 1.0 + sin(t * 10.0) * 0.06)
+			var bk := 1.0 + sin(t * 7.0) * 0.15 if active and grip else 0.0
+			parts["blob"].scale = Vector3(0.016, 0.012, 0.016) * bk
+			parts["blob"].visible = bk > 0.0
 		"spray":
 			if spray_fx:
 				spray_fx.emitting = active and grip

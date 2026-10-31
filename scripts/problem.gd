@@ -27,6 +27,7 @@ const L_OILY := 12
 const L_SCRAPE := 13
 const L_SCAR := 14
 const L_STUBBLE := 15
+const L_CREAM := 16
 # tipos do dome.gdshader
 const D_PUSTULE := 0
 const D_BLISTER := 1
@@ -159,7 +160,9 @@ func rub(wpos: Vector3, px: float, brush_r: float) -> float:
 		for h in fx_hosts:
 			if is_instance_valid(h):
 				var fx: FxMap = h.get_meta("fx")
-				fx.wipe(host_uv(h, wpos), brush_r / _host_half(h) * FxMap.SIZE * 0.5, 0.25 * speed)
+				fx.wipe(host_uv(h, wpos), brush_r / _host_half(h) * FxMap.SIZE * 0.5, 0.45 * speed)
+	if tool() == "pomada":
+		_spread_cream(wpos, brush_r)
 	var a := amount()
 	var target := _rub_target()
 	var bhost: MeshInstance3D = n.get("aggr") if _aggr_stage() and tool() == "algodao" else (cut_host if id == "machucado" and tool() == "algodao" else null)
@@ -169,22 +172,26 @@ func rub(wpos: Vector3, px: float, brush_r: float) -> float:
 		blood_peak = maxf(blood_peak, b)
 		var pr := 0.0
 		if blood_peak > 0.0015:
-			pr = clampf((1.0 - b / blood_peak) / 0.88, 0.0, 1.0)
+			pr = clampf((1.0 - b / blood_peak) / 0.8, 0.0, 1.0)
 		else:
 			# quase sem sangue: ainda precisa esfregar um pouco
-			pr = clampf(progress + px / 350.0, 0.0, 1.0)
+			pr = clampf(progress + px / 250.0, 0.0, 1.0)
 		var g0 := maxf(0.0, pr - progress)
 		progress = maxf(progress, pr)
 		if progress >= 0.985:
+			progress = 1.0
+		# sangue que insiste em brotar: esfregando sem ganho com quase tudo limpo, conclui
+		rub_stall = 0.0 if g0 > 0.0005 else rub_stall + px
+		if progress >= 0.8 and rub_stall > 800.0:
 			progress = 1.0
 		_visual()
 		if progress >= 1.0:
 			_complete_stage()
 		return g0
 	if a <= 1.0 and target != null:
-		var cov := _paint(target, wpos, brush_r, 0.36 * speed)
-		# precisa limpar de verdade quase a área toda (cobertura ponderada >= 87%)
-		progress = clampf(cov / 0.87, 0.0, 1.0)
+		var cov := _paint(target, wpos, brush_r, 0.55 * speed)
+		# precisa limpar de verdade quase a área toda (cobertura ponderada >= 84%)
+		progress = clampf(cov / 0.84, 0.0, 1.0)
 		if progress >= 0.985:
 			progress = 1.0
 		# sobrou só um restinho que não sai (canto/dobra): esfregando sem ganho, conclui
@@ -192,7 +199,7 @@ func rub(wpos: Vector3, px: float, brush_r: float) -> float:
 			rub_stall = 0.0
 		else:
 			rub_stall += px
-		if progress >= 0.9 and rub_stall > 1400.0:
+		if progress >= 0.85 and rub_stall > 800.0:
 			progress = 1.0
 		var g := progress - before
 		_visual()
@@ -351,6 +358,27 @@ func sweep(screen_pos: Vector2, radius_px: float, cam: Camera3D) -> int:
 		_after_items()
 	return c
 
+## Barbeador: corta os pelos que a linha das lâminas varreu entre o quadro anterior (a0-b0) e o atual (a1-b1)
+func sweep_blade(a0: Vector2, b0: Vector2, a1: Vector2, b1: Vector2, half_w: float, cam: Camera3D) -> int:
+	var c := 0
+	for it in items:
+		if not it["alive"]:
+			continue
+		var sp := cam.unproject_position(it["pos"])
+		var hit := false
+		for k in 5:
+			var f := k / 4.0
+			var q := Geometry2D.get_closest_point_to_segment(sp, a0.lerp(a1, f), b0.lerp(b1, f))
+			if q.distance_to(sp) < half_w:
+				hit = true
+				break
+		if hit:
+			_remove_item(it)
+			c += 1
+	if c > 0:
+		_after_items()
+	return c
+
 func pick(screen_pos: Vector2, radius_px: float, cam: Camera3D) -> bool:
 	var best = null
 	var bd := radius_px
@@ -370,7 +398,7 @@ func _add(x: float) -> void:
 	if done:
 		return
 	# esfregar por distância (pomada etc.) pede ~15% menos que antes
-	progress += x * speed / (amount() * (0.85 if mech() == Defs.Mech.RUB else 1.0))
+	progress += x * speed / (amount() * (0.7 if mech() == Defs.Mech.RUB else 1.0))
 	_visual()
 	if progress >= 1.0:
 		_complete_stage()
@@ -1430,6 +1458,18 @@ func _add_extra_stages() -> void:
 func _aggr_stage() -> bool:
 	return not done and def["stages"][stage].size() > 3 and def["stages"][stage][3] == "aggr"
 
+## Pomada: camada branca que aparece onde se espalha (fica por baixo do curativo)
+func _spread_cream(wpos: Vector3, brush_r: float) -> void:
+	if not n.has("cream"):
+		var cr := _lesion(L_CREAM, maxf(size * 1.35, 0.06), Vector2.ZERO, true, 0.0095)
+		var mk: CleanMask = cr.get_meta("mask")
+		mk.img.fill(Color(0, 0, 0, 1))
+		mk.dirty = true
+		mk.flush()
+		_lmat(cr).render_priority = 2
+		n["cream"] = cr
+	_paint(n["cream"], wpos, brush_r * 1.1, 0.4 * speed)
+
 ## Corte feito pelo jogador (erro) — pintado onde arrastou
 func wound_stroke(wpos: Vector3, first: bool) -> void:
 	var fx: FxMap = cut_host.get_meta("fx")
@@ -1551,7 +1591,7 @@ func rub_nail(wpos: Vector3, brush_r: float) -> float:
 	var u := lp.x / (w * 0.5)
 	var v := lp.z / L
 	var mk: CleanMask = n["mask"]
-	mk.paint(Vector2(u, v / 1.6 * 2.0 - 1.0), brush_r / (w * 0.5), 0.42 * speed)
+	mk.paint(Vector2(u, v / 1.6 * 2.0 - 1.0), brush_r / (w * 0.5), 0.6 * speed)
 	mk.flush()
 	var cov := 0.0
 	var cnt := 0
@@ -2052,6 +2092,10 @@ func _on_done() -> void:
 		if is_instance_valid(h):
 			var hm := h.material_override as ShaderMaterial
 			create_tween().tween_method(func(v): hm.set_shader_parameter("scar", v), 0.0, 1.0, 1.5)
+	# a pomada vai sendo absorvida (fica um brilho fino)
+	if n.has("cream") and is_instance_valid(n["cream"]):
+		var cm := _lmat(n["cream"])
+		create_tween().tween_method(func(v): cm.set_shader_parameter("strength", v), 1.0, 0.45, 6.0).set_delay(2.0)
 	match id:
 		"espinha", "cisto", "pelo_encravado", "bolha", "furunculo", "abscesso", "carbunculo", "unha_pus", "bicho_pe":
 			_shrink("dome", 1.2)

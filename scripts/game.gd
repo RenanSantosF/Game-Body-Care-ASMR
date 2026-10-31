@@ -3,7 +3,7 @@ extends Node3D
 
 const EXCLAIMS := ["ECA!", "QUE NOJO!", "SPLASH!", "ARGH!", "SPLOFT!", "NOJENTO!", "BLERGH!"]
 const PRAISE := ["PERFEITO!", "LIMPINHO!", "ÓTIMO!", "BRILHANDO!", "ALÍVIO!", "LINDO!"]
-const BRUSH := {"pano": 0.05, "algodao": 0.04, "raspador": 0.035, "lixa": 0.03, "pomada": 0.045}
+const BRUSH := {"pano": 0.07, "algodao": 0.056, "raspador": 0.04, "lixa": 0.035, "pomada": 0.06}
 const MAX_WOUNDS := 4
 
 var data: Dictionary
@@ -64,7 +64,8 @@ var trig_touch := -1
 var triggering := false
 var pus_str: PusString = null
 var wrong_p: Problem = null
-var stroke_locked := false       # etapa terminou durante o arrasto: só começa outro problema após soltar o dedo      # problema que o jogador está estragando com a ferramenta errada
+var stroke_locked := false
+var use_btn: UseButton       # etapa terminou durante o arrasto: só começa outro problema após soltar o dedo      # problema que o jogador está estragando com a ferramenta errada
 var buzz_t := 0.0
 var cam_gesture := false
 var pinch_d0 := 1.0
@@ -347,7 +348,8 @@ func _frame_for(target: Vector3, radius: float) -> Array:
 		if br.size.y > 1.0:
 			bar_top = br.position.y
 	var top := vr.y * 0.14
-	var bottom := maxf(top + vr.y * 0.3, bar_top + TOOL_OFFSET.y - 10.0)
+	# deixa livre o botão de usar (canto de baixo, à esquerda)
+	var bottom := maxf(top + vr.y * 0.3, bar_top + TOOL_OFFSET.y - 60.0)
 	var want := Vector2(vr.x * 0.5 + TOOL_OFFSET.x * 0.25, (top + bottom) * 0.5)
 	var max_r := minf(vr.x * 0.36, (bottom - top) * 0.5 * 0.9)
 	var d := clampf(0.6 + radius * 2.6, 0.92, WIDE_D * 0.8)
@@ -388,8 +390,20 @@ func _next_problem(from: Vector3) -> Problem:
 func _update_coach(delta: float) -> void:
 	if coach == null:
 		return
+	if use_btn:
+		var vr := get_viewport().get_visible_rect().size
+		var bar_top := vr.y * 0.82
+		if tool_bar and tool_bar.get_parent() is Control:
+			var br := (tool_bar.get_parent() as Control).get_global_rect()
+			if br.size.y > 1.0:
+				bar_top = br.position.y
+		use_btn.center = Vector2(use_btn.radius + 26.0, bar_top - use_btn.radius - 22.0)
+		use_btn.tool_id = selected
+		use_btn.ready_glow = pressing and active != null and not triggering
+		use_btn.visible = not modal_open and not finished
+		coach.button = use_btn.center
 	coach.aim = _screen_from_work(last_pos) if pressing else Vector2(-1, -1)
-	coach.action = touches[trig_touch] if trig_touch >= 0 and touches.has(trig_touch) else Vector2(-1, -1)
+	coach.action = Vector2(-1, -1)
 	if pressing and not triggering and active != null:
 		aim_still += delta
 	else:
@@ -496,6 +510,7 @@ func _process(delta: float) -> void:
 	_update_guide()
 	_update_coach(delta)
 	_update_tool_model()
+	_blade_sweep()
 	_update_deform(delta)
 	_update_hint_glow()
 
@@ -666,6 +681,7 @@ func _update_tool_model() -> void:
 	tool_pos = tool_pos.lerp(pos, 0.45)
 	tool_vel = tool_vel.lerp((tool_pos - prev) * 60.0, 0.2)
 	tool_model.global_position = tool_pos
+	tool_model.vel = tool_vel
 	var cb := cam.global_basis
 	var y := (Vector3.UP * 0.75 + cb.z * 0.35 + cb.x * 0.35 - Vector3(tool_vel.x, 0, tool_vel.z) * 0.15).normalized()
 	if selected == "pano":
@@ -721,17 +737,23 @@ func _unhandled_input(e: InputEvent) -> void:
 func _on_touch(idx: int, pos: Vector2, down: bool) -> void:
 	if down:
 		touches[idx] = pos
-		if touches.size() == 1:
+		if use_btn and use_btn.hit(pos) and trig_touch < 0:
+			# segurar o botão verde = usar a ferramenta (a outra mão mira)
+			trig_touch = idx
+			use_btn.held = true
+			if pressing:
+				_trigger(true)
+		elif tool_touch < 0:
 			tool_touch = idx
 			_tool_down(pos + TOOL_OFFSET)
-		elif tool_touch >= 0 and trig_touch < 0:
-			# segundo dedo em qualquer lugar = usar a ferramenta
-			trig_touch = idx
-			_trigger(true)
+			if trig_touch >= 0 and pressing:
+				_trigger(true)
 	else:
 		touches.erase(idx)
 		if idx == trig_touch:
 			trig_touch = -1
+			if use_btn:
+				use_btn.held = false
 			_trigger(false)
 		if idx == tool_touch:
 			tool_touch = -1
@@ -806,7 +828,9 @@ func _act_start(a: Problem) -> void:
 		Defs.Mech.RUB:
 			_do_rub(a, last_pos, 0.0)
 		Defs.Mech.SWEEP:
-			a.sweep(last_pos, _sweep_r(), cam)
+			if selected != "lamina":
+				a.sweep(last_pos, _sweep_r(), cam)
+			_blade_prev = []
 
 func _screen_radius(p: Problem) -> float:
 	var c := cam.unproject_position(p.center())
@@ -1060,10 +1084,11 @@ func _drag(pos: Vector2) -> void:
 		Defs.Mech.PULL:
 			frame_pull += rel
 		Defs.Mech.SWEEP:
-			# interpola ao longo do arrasto para não pular pelos em movimentos rápidos
-			var steps := clampi(int(rel / 20.0), 1, 12)
-			for i in steps:
-				a.sweep(prev_pos.lerp(pos, float(i + 1) / steps), _sweep_r(), cam)
+			# o barbeador corta pela linha das lâminas (em _blade_sweep, a cada quadro)
+			if selected != "lamina":
+				var steps := clampi(int(rel / 20.0), 1, 12)
+				for i in steps:
+					a.sweep(prev_pos.lerp(pos, float(i + 1) / steps), _sweep_r(), cam)
 
 func _clean_residue(pos: Vector2) -> void:
 	var hit := _ray_body(pos)
@@ -1097,7 +1122,22 @@ func _release() -> void:
 	_update_labels()
 
 func _sweep_r() -> float:
-	return 110.0 if selected == "lamina" else 55.0
+	return 55.0
+
+var _blade_prev: Array = []
+## Barbeador encostado e acionado: corta tudo que a linha das lâminas varreu neste quadro
+func _blade_sweep() -> void:
+	var seg := tool_model.blade_segment()
+	if seg.is_empty() or not triggering or active == null or active.mech() != Defs.Mech.SWEEP:
+		_blade_prev = []
+		return
+	var a1 := cam.unproject_position(seg[0])
+	var b1 := cam.unproject_position(seg[1])
+	var a0: Vector2 = _blade_prev[0] if _blade_prev.size() == 2 else a1
+	var b0: Vector2 = _blade_prev[1] if _blade_prev.size() == 2 else b1
+	if active.sweep_blade(a0, b0, a1, b1, 16.0, cam) > 0:
+		Sfx.play_throttled("cut", 0.06, 0.2, -8)
+	_blade_prev = [a1, b1]
 
 func _rub_fx(p: Problem) -> void:
 	if now - rub_t < 0.07:
@@ -1529,6 +1569,8 @@ func _build_hud() -> void:
 	guide = GuideArrow.new()
 	hud_root.add_child(guide)
 	hud_root.move_child(guide, 0)
+	use_btn = UseButton.new()
+	hud_root.add_child(use_btn)
 	coach = TwoFingerCoach.new()
 	hud_root.add_child(coach)
 
@@ -1635,7 +1677,7 @@ func _update_labels() -> void:
 	if _dirt_mult(p) < 1.0:
 		lbl_hint.text = "Tá sujo em volta: limpe com o Pano primeiro!"
 	elif _hints_on():
-		lbl_hint.text = "Use: %s  -  %s (com o 2º dedo)" % [Defs.TOOLS[p.tool()]["name"], Defs.MECH_HINT[p.mech()]]
+		lbl_hint.text = "Use: %s  -  %s (segure o botão verde)" % [Defs.TOOLS[p.tool()]["name"], Defs.MECH_HINT[p.mech()]]
 	elif selected == "":
 		lbl_hint.text = "Escolha uma ferramenta"
 	else:

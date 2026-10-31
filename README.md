@@ -39,7 +39,7 @@ Renderizador: **Compatibility (OpenGL ES 3)**, sem sombras dinâmicas (sombra de
 | Gesto | Ação |
 |---|---|
 | 1 dedo | **mira** a ferramenta (ela fica acima e à esquerda do dedo). Mirar não faz nada sozinho |
-| 2º dedo em qualquer lugar | **usa** a ferramenta: fura, corta, limpa, raspa, espreme, puxa, cola o curativo |
+| **Segurar o botão verde** (canto de baixo, à esquerda) | **usa** a ferramenta enquanto segura: fura, corta, limpa, raspa, espreme, puxa, cola o curativo |
 | PC | botão esquerdo = mirar, **direito ou Espaço = usar** |
 
 A câmera é automática: ao terminar um problema ela vai sozinha para o próximo (a seta e o anel

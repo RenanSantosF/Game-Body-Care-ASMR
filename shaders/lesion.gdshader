@@ -43,6 +43,7 @@ const int OILY = 12;
 const int SCRAPE = 13;
 const int SCAR = 14;
 const int STUBBLE = 15;
+const int CREAM = 16;
 
 varying vec3 wn;
 
@@ -112,6 +113,8 @@ float hfield(vec2 uv) {
 		h = (1.0 - smoothstep(0.02, 0.2, d)) * 0.6 * (1.0 - smoothstep(0.8, 1.0, abs(uv.x)));
 	} else if (kind == SCRAPE) {
 		h = -(1.0 - smoothstep(0.3, 1.0, r)) * 0.2;
+	} else if (kind == CREAM) {
+		h = smoothstep(0.15, 0.8, m) * (0.25 + 0.2 * fbm(uv * 7.0 + seed)) * (1.0 - smoothstep(0.75, 1.0, r));
 	}
 	vec4 f = fxs(uv);
 	float co = cut_open(f.a);
@@ -237,6 +240,13 @@ void fragment() {
 		col = mix(skin, red, 0.55 + 0.3 * (1.0 - smoothstep(0.0, 0.1, d)));
 		gloss = 0.4;
 		col = mix(col, mix(skin, vec3(1.0, 0.62, 0.62), 0.4), heal);
+	} else if (kind == CREAM) {
+		// creme branco espesso, com marcas do espalhar
+		float streak = fbm(vec2(uv.x * 3.0, uv.y * 18.0) + seed);
+		a = smoothstep(0.1, 0.55, m) * (1.0 - smoothstep(0.8, 1.0, r)) * (0.7 + 0.25 * streak);
+		col = mix(vec3(0.93, 0.92, 0.88), vec3(1.0, 0.995, 0.98), streak);
+		col = mix(col, skin * 1.05, smoothstep(0.55, 0.1, m) * 0.5);
+		gloss = 0.75;
 	} else if (kind == OILY) {
 		a = (1.0 - smoothstep(0.3, 1.0, r)) * 0.22;
 		col = vec3(1.0, 0.95, 0.75);
