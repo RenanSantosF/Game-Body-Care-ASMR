@@ -138,7 +138,15 @@ func _ready() -> void:
 
 	_build_hud()
 	hud.visible = false
+	# foto do ANTES enquadrada nos machucados (para a comparação mostrar a diferença)
+	var fr := _frame_all()
+	cam_look = fr[0]
+	cam_dist = fr[1]
+	_apply_cam()
 	before_img = await _capture()
+	cam_dist = WIDE_D
+	cam_look = Vector3(body.cam_center.x, 0, body.cam_center.z)
+	_apply_cam()
 	hud.visible = true
 	_check_tools()
 
@@ -376,6 +384,24 @@ func _plane_hit(px: Vector2, y: float) -> Vector3:
 		return o
 	return o + dir * ((y - o.y) / dir.y)
 
+## Enquadra todos os problemas da fase (para o antes/depois)
+func _frame_all() -> Array:
+	var c := Vector3.ZERO
+	var n := 0
+	for p in problems:
+		if p.id == "machucado":
+			continue
+		c += p.center()
+		n += 1
+	if n == 0:
+		return [Vector3(body.cam_center.x, 0, body.cam_center.z), WIDE_D]
+	c /= n
+	var r := 0.05
+	for p in problems:
+		if p.id != "machucado":
+			r = maxf(r, Vector2(p.center().x - c.x, p.center().z - c.z).length() + p.size * 1.3)
+	return _frame_for(c, r)
+
 func _go_wide() -> void:
 	_move_cam(_wide_pos(), Vector3(body.cam_center.x, 0, body.cam_center.z))
 	_update_labels()
@@ -425,7 +451,7 @@ func _update_guide() -> void:
 		return
 	if pressing and active and not active.done and not triggering and active.mech() in [Defs.Mech.HOLD, Defs.Mech.PULL, Defs.Mech.PICK, Defs.Mech.TAP]:
 		var verb: String = {"pinca": "fechar a pinça", "espremedor": "apertar", "agulha": "furar", "spray": "borrifar", "curativo": "colar o curativo"}.get(selected, "usar")
-		lbl_hint.text = "Toque com OUTRO dedo para %s!" % verb
+		lbl_hint.text = "Segure o botão verde para %s!" % verb
 	var p := focus if focus and not focus.done else _next_problem(cam_look)
 	focus = p
 	if p == null or finished:
@@ -662,6 +688,20 @@ func _update_deform(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("pull_amt", pull_cur)
 	RenderingServer.global_shader_parameter_set("pull_r", 0.03)
 
+var _fit := 1.0
+## Espremedor do tamanho do caso: pequeno para cravos/espinhas da acne, maior para furúnculos
+func _tool_fit() -> float:
+	var want := 1.0
+	if selected == "espremedor":
+		var t := active if active else _pick_problem(last_pos)
+		if t and t.tool() == "espremedor":
+			if t.mech() == Defs.Mech.PICK:
+				want = 0.55
+			else:
+				want = clampf(t.size / 0.12, 0.65, 1.25)
+	_fit = lerpf(_fit, want, 0.2)
+	return _fit
+
 var _press_pos := Vector3.ZERO
 var _press_r := 0.04
 ## Quanto a pele sobe/desce neste ponto (mesma conta do deform.gdshaderinc)
@@ -714,7 +754,7 @@ func _update_tool_model() -> void:
 	var x := (cb.x - y * cb.x.dot(y)).normalized()
 	var z := x.cross(y)
 	var dist := cam.global_position.distance_to(pos)
-	tool_model.global_basis = Basis(x, y, z).scaled(Vector3.ONE * clampf(dist / 1.3, 0.6, 2.5))
+	tool_model.global_basis = Basis(x, y, z).scaled(Vector3.ONE * clampf(dist / 1.3, 0.6, 2.5) * _tool_fit())
 	tool_model.grip = triggering
 	tool_model.set_active(active != null and triggering, active.mech() if active else -1)
 
@@ -1423,8 +1463,10 @@ func _finish() -> void:
 	Sfx.play("success")
 	_toast("PACIENTE CURADO!", UIKit.GREEN, 60, 1.4)
 	await get_tree().create_timer(1.0).timeout
-	_go_wide()
-	await get_tree().create_timer(1.2).timeout
+	# DEPOIS com o mesmo enquadramento do antes
+	var fr := _frame_all()
+	_move_cam(_cam_pos_for(fr[0], fr[1]), fr[0], 0.9)
+	await get_tree().create_timer(1.3).timeout
 	hud.visible = false
 	var after := await _capture()
 	hud.visible = true
@@ -1900,8 +1942,14 @@ func _pause() -> void:
 		GameData.vibrate_on = not GameData.vibrate_on
 		GameData.save_game()
 		upd_vib.call()
-		GameData.vibrate(40, 0.6))
+		GameData.vibrate(120, -1.0))
 	vb.add_child(vib)
+	var vt := UIKit.btn("Testar vibração", UIKit.PINK.darkened(0.15), 24, Vector2(300, 60))
+	vt.pressed.connect(func():
+		if not GameData.vibrate_on:
+			_toast("A vibração está desligada", UIKit.YELLOW, 28, 1.2)
+		GameData.vibrate(400, -1.0, true))
+	vb.add_child(vt)
 	var snd := UIKit.btn("", UIKit.YELLOW, 26, Vector2(300, 66))
 	var upd_snd := func(): snd.text = "Sons: " + ("LIGADOS" if GameData.sound_on else "DESLIGADOS")
 	upd_snd.call()

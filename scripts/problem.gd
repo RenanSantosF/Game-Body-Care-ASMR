@@ -203,7 +203,9 @@ func rub(wpos: Vector3, px: float, brush_r: float) -> float:
 	if a <= 1.0 and target != null:
 		var cov := _paint(target, wpos, brush_r, 0.55 * speed)
 		# precisa limpar de verdade quase a área toda (cobertura ponderada >= 84%)
-		progress = clampf(cov / 0.84, 0.0, 1.0)
+		# c0 = quanto já estava limpo quando a etapa começou (ex.: acne, só suja onde espremeu)
+		var c0: float = target.get_meta("c0", 0.0)
+		progress = clampf((cov - c0) / maxf(0.05, (1.0 - c0) * 0.84), 0.0, 1.0)
 		if progress >= 0.985:
 			progress = 1.0
 		# sobrou só um restinho que não sai (canto/dobra): esfregando sem ganho, conclui
@@ -323,6 +325,9 @@ func _set_guide_uv() -> void:
 
 ## Limpa sujeira/pus/sangue que sobrou, mesmo depois da etapa terminar. Retorna o quanto limpou.
 func clean_residue(wpos: Vector3, brush_r: float) -> float:
+	# se ainda tem etapa de limpeza pela frente, a limpeza conta lá (não apaga antes)
+	if not done and tool() in ["pano", "algodao"]:
+		return 0.0
 	var gained := 0.0
 	for key in ["dirt", "splat", "blood", "grime", "oily", "splat2"]:
 		if not n.has(key) or not is_instance_valid(n[key]):
@@ -338,6 +343,13 @@ func clean_residue(wpos: Vector3, brush_r: float) -> float:
 		var before := mk.coverage()
 		var after := _paint(mi, wpos, brush_r, 0.35)
 		gained += maxf(0.0, after - before)
+		# o restinho que sobrou vai sumindo de vez se continuar limpando
+		var lm := mi.material_override as ShaderMaterial
+		var hv = lm.get_shader_parameter("heal")
+		var hcur: float = hv if hv != null else 0.0
+		if hcur < 0.98:
+			lm.set_shader_parameter("heal", minf(0.98, hcur + 0.006))
+			gained += 0.0006
 		(mi.material_override as ShaderMaterial).set_shader_parameter("wet", 1.0)
 		wet = 1.0
 	for h in fx_hosts:
@@ -1315,6 +1327,12 @@ func _build_acne_costas() -> void:
 		mat.set_shader_parameter("skin", skin.lerp(Color(0.85, 0.3, 0.25), 0.5))
 		MeshGen.inst(nd, MeshGen.sphere(1.0), mat, Vector3(0, -0.001, 0), Vector3(rr, rr * 0.85, rr))
 		items.append({"node": nd, "pos": sp[0], "alive": true, "r": rr})
+	# pus que vai aparecendo a cada espinha espremida (começa limpo)
+	n["splat"] = _lesion(L_PUS, size * 1.25, Vector2.ZERO, true, 0.008)
+	var smk: CleanMask = n["splat"].get_meta("mask")
+	smk.img.fill(Color(1, 1, 1, 1))
+	smk.dirty = true
+	smk.flush()
 	# cravos espalhados no meio (enfeite nojento)
 	for i in rng.randi_range(8, 12):
 		var a2 := rng.randf() * TAU
@@ -1642,7 +1660,7 @@ func _add_dollop(wpos: Vector3) -> void:
 	body.add_child(mi)
 	mi.global_position = sp[0] + sp[1] * 0.004
 	mi.global_basis = MeshGen.basis_from_normal(sp[1]).rotated(sp[1], rng.randf() * TAU)
-	var r := clampf(size * 0.2, 0.014, 0.03)
+	var r := clampf(size * 0.24, 0.018, 0.036)
 	mi.scale = Vector3.ONE * 0.001
 	mi.set_meta("full", Vector3(r, r * 0.75, r * 1.15))
 	create_tween().tween_property(mi, "scale", mi.get_meta("full"), 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -2058,10 +2076,19 @@ func _remove_item(it: Dictionary) -> void:
 			var tw3 := create_tween()
 			tw3.tween_property(plug3, "scale", Vector3(1.2, 1.4, 1.2), 0.14)
 			tw3.tween_callback(func(): _fly_off(plug3))
-			for c in nd3.get_children():
+			# a cabeça amarela some; fica só a marquinha vermelha
+			var kids := nd3.get_children()
+			for c in kids:
 				if c != plug3:
-					create_tween().tween_property(c, "scale", c.scale * Vector3(0.85, 0.3, 0.85), 0.3)
+					var k := Vector3(0.7, 0.35, 0.7) if c == kids[0] else Vector3(0.01, 0.01, 0.01)
+					create_tween().tween_property(c, "scale", c.scale * k, 0.3)
 			body.spawn_drops(it["pos"] + Vector3.UP * 0.01, Vector3.UP, 2, 3, 0.6, 0.006, 0.6)
+			# o pus espirra em volta da espinha
+			if n.has("splat"):
+				var sm: MeshInstance3D = n["splat"]
+				var smk2: CleanMask = sm.get_meta("mask")
+				smk2.unpaint(host_uv(sm, it["pos"]), rr * 3.0 / sm.get_meta("half"), 0.85)
+				smk2.flush()
 			popped.emit(self, PUS_C)
 			Sfx.play("squish", 0.3)
 		"queimadura":
@@ -2083,12 +2110,30 @@ func _remove_item(it: Dictionary) -> void:
 # =================================================================== início/fim de etapa
 
 func _on_stage_start(s: int) -> void:
+	# antes da pomada o caroço já murchou de vez (a pomada cobre por cima, sem calombo aparecendo)
+	if def["stages"][s][0] == "pomada":
+		for d in domes:
+			if is_instance_valid(d) and d.visible:
+				var dm := d.material_override as ShaderMaterial
+				var tw := create_tween().set_parallel()
+				tw.tween_property(d, "scale", Vector3(d.scale.x, d.scale.y * 0.18, d.scale.z), 0.6)
+				tw.tween_method(func(v): dm.set_shader_parameter("deflate", v), 0.6, 1.0, 0.6)
+				tw.chain().tween_callback(d.hide)
+		if n.has("slit") and is_instance_valid(n["slit"]):
+			n["slit"].hide()
+		for key in ["heads"]:
+			for hd in n.get(key, []):
+				if is_instance_valid(hd):
+					hd.hide()
 	match id:
 		"farpa", "carrapato", "pelo_encravado":
 			pass
 		"larvas":
 			if s == 2:
 				n["blood"] = _lesion(L_BLOOD, size * 0.95, Vector2.ZERO, true, 0.009)
+		"acne_costas":
+			if s == 1 and n.has("splat"):
+				n["splat"].set_meta("c0", (n["splat"].get_meta("mask") as CleanMask).coverage())
 		"espinhos":
 			if s == 1:
 				n["blood"] = _lesion(L_BLOOD, size * 1.0, Vector2.ZERO, true, 0.009)
@@ -2129,13 +2174,22 @@ func _on_stage_end_rest(s: int) -> void:
 				var tw := create_tween()
 				tw.tween_property(nd, "scale", nd.scale * Vector3(1.4, 0.05, 1.4), 0.5)
 				tw.tween_callback(nd.hide)
-	# antisséptico estanca o sangramento
+	# antisséptico estanca o sangramento e tira quase todo o pus (fica só um restinho)
 	if def["stages"][s][0] == "algodao":
 		for h in fx_hosts:
 			if is_instance_valid(h):
 				var fx: FxMap = h.get_meta("fx")
 				fx.bleed = 0.0
 				fx.drips.clear()
+		for key in ["splat", "splat2", "grime"]:
+			if n.has(key) and is_instance_valid(n[key]):
+				_heal_lesion(key, 0.85, 0.9)
+		for d in domes:
+			if is_instance_valid(d):
+				var dm := d.material_override as ShaderMaterial
+				var pc = dm.get_shader_parameter("pus_col")
+				var from: Color = pc if pc != null else Color(0.93, 0.78, 0.36)
+				create_tween().tween_method(func(c): dm.set_shader_parameter("pus_col", c), from, Color(0.72, 0.28, 0.24), 0.9)
 	var up := global_basis.y
 	var gp := global_position
 	match id:
@@ -2291,7 +2345,6 @@ func _on_stage_end_rest(s: int) -> void:
 				_bandage(wound_radius(), wound_radius())
 		"acne_costas":
 			if s == 0:
-				n["splat"] = _lesion(L_PUS, size * 1.15, Vector2.ZERO, true, 0.008)
 				Sfx.play("splat")
 		"queimadura":
 			if s == 0:

@@ -143,12 +143,19 @@ func _yesterday() -> String:
 var _vib_until := 0
 
 ## amp 0..1 (força). Não empilha: ignora pulsos enquanto outro ainda vibra, exceto se mais forte.
-func vibrate(ms: int, amp := -1.0) -> void:
+func vibrate(ms: int, amp := -1.0, force := false) -> void:
 	if not vibrate_on or not OS.has_feature("mobile"):
 		return
 	var now := Time.get_ticks_msec()
-	if now < _vib_until and amp < 0.8:
+	if not force and now < _vib_until and (amp < 0.8 and amp >= 0.0):
 		return
+	# motores de vibração mais simples não sentem pulsos curtos/fracos: mínimo de 25ms e força
+	ms = maxi(ms, 25)
+	if amp >= 0.0:
+		amp = clampf(amp * 1.3, 0.4, 1.0)
+	# forte = força padrão do sistema (alguns celulares ignoram intensidade escolhida)
+	if amp >= 0.75:
+		amp = -1.0
 	_vib_until = now + ms
 	Input.vibrate_handheld(ms, amp)
 

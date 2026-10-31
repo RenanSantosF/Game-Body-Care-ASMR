@@ -37,7 +37,8 @@ void vertex() {
 	}
 	// murchar: achata e enruga
 	float rr = length(v.xz);
-	float wr = sin(rr * 26.0 + atan(v.z, v.x) * 3.0 + seed) * 0.08 * deflate;
+	// murcho: pregas radiais (pele vazia enrugando), sem espiral
+	float wr = sin(atan(v.z, v.x) * 7.0 + seed + sin(rr * 5.0 + seed) * 0.6) * sin(rr * 9.0) * 0.035 * deflate;
 	v.y = v.y * (1.0 - deflate * 0.75) + wr * smoothstep(0.0, 0.4, v.y);
 	// corte abre a cúpula
 	float co = smoothstep(0.55 - open_amt * 0.4, 0.95, cut_a(v));
@@ -90,7 +91,7 @@ void fragment() {
 	}
 	// rugas escurecem
 	float rr = length(lp.xz);
-	col *= 1.0 - deflate * 0.25 * (0.5 + 0.5 * sin(rr * 26.0 + atan(lp.z, lp.x) * 3.0 + seed));
+	col *= 1.0 - deflate * 0.18 * (0.5 + 0.5 * sin(atan(lp.z, lp.x) * 7.0 + seed + sin(rr * 5.0 + seed) * 0.6));
 	float hd = rr;
 	vec3 hole_c = kind == 1 ? vec3(0.8, 0.5, 0.45) : vec3(0.3, 0.04, 0.03);
 	col = mix(col, hole_c, (1.0 - smoothstep(0.08, 0.15, hd)) * hole * step(0.75, h));

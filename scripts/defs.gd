@@ -91,7 +91,7 @@ const PROBLEMS := {
 	"carbunculo": {"name": "Carbúnculo (furúnculo com várias cabeças)", "tier": 3, "size": 0.24, "w": 3, "where": "dorso",
 		"stages": [["bisturi", Mech.CUT, 1.0], ["espremedor", Mech.HOLD, 3.4], ["algodao", Mech.RUB, 0.75], ["pomada", Mech.RUB, 450.0], ["curativo", Mech.TAP, 1.0]]},
 	"acne_costas": {"name": "Acne inflamada", "tier": 2, "size": 0.22, "w": 4, "where": "dorso", "parts": ["costas", "rosto", "mao"],
-		"stages": [["espremedor", Mech.PICK, 1.0], ["algodao", Mech.RUB, 0.75]]},
+		"stages": [["espremedor", Mech.PICK, 1.0], ["algodao", Mech.RUB, 0.75], ["pomada", Mech.RUB, 400.0]]},
 	"queimadura": {"name": "Queimadura com bolhas", "tier": 2, "size": 0.2, "w": 3, "where": "dorso",
 		"stages": [["agulha", Mech.HOLD, 0.9], ["pinca", Mech.PICK, 1.0], ["pomada", Mech.RUB, 600.0], ["curativo", Mech.TAP, 1.0]]},
 	"pontos":    {"name": "Pontos infeccionados", "tier": 2, "size": 0.17, "w": 3, "where": "dorso",

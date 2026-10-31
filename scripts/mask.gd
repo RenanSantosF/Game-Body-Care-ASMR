@@ -29,6 +29,23 @@ static func brush(px: int, strength: float) -> Image:
 	_brushes[key] = b
 	return b
 
+## Suja de novo (pinta preto) — ex.: pus que espirra ao espremer
+func unpaint(uv: Vector2, radius_uv: float, strength := 0.8) -> void:
+	var px := clampi(int(radius_uv * SIZE), 4, SIZE)
+	px = (px / 2) * 2 + 1
+	var key := "d%d_%.2f" % [px, strength]
+	if not _brushes.has(key):
+		var b0 := brush(px, strength).duplicate() as Image
+		for y in px:
+			for x in px:
+				var c := b0.get_pixel(x, y)
+				b0.set_pixel(x, y, Color(0, 0, 0, c.a))
+		_brushes[key] = b0
+	var b: Image = _brushes[key]
+	var p := (uv * 0.5 + Vector2(0.5, 0.5)) * SIZE - Vector2(px, px) * 0.5
+	img.blend_rect(b, Rect2i(0, 0, px, px), Vector2i(p))
+	dirty = true
+
 ## uv em -1..1, raio em unidades de uv
 func paint(uv: Vector2, radius_uv: float, strength := 0.35) -> void:
 	var px := clampi(int(radius_uv * SIZE), 4, SIZE)
