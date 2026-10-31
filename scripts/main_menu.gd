@@ -62,7 +62,7 @@ func _ready() -> void:
 	ltw.tween_property(logo, "scale", Vector2(1.03, 1.03), 1.2).set_trans(Tween.TRANS_SINE)
 	ltw.tween_property(logo, "scale", Vector2.ONE, 1.2).set_trans(Tween.TRANS_SINE)
 	Sfx.play_music("menu")
-	var tag := UIKit.label("Clínica de cuidados nojentos\ne satisfatórios", 28, Color.WHITE, 6)
+	var tag := UIKit.label("Do nojento ao brilhante!", 28, Color.WHITE, 6)
 	center.add_child(tag)
 	var sub := UIKit.label("Pacientes atendidos: %d  |  Estrelas: %d" % [GameData.patients_treated, GameData.total_stars()], 22, Color(1, 1, 1, 0.9), 5)
 	center.add_child(sub)
