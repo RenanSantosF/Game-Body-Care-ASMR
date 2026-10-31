@@ -64,6 +64,7 @@ var trig_touch := -1
 var triggering := false
 var pus_str: PusString = null
 var wrong_p: Problem = null
+var after_p: Problem = null      # continuando com ferramenta de etapa já feita (efeito leve, sem dor)
 var stroke_locked := false
 var use_btn: UseButton       # etapa terminou durante o arrasto: só começa outro problema após soltar o dedo      # problema que o jogador está estragando com a ferramenta errada
 var buzz_t := 0.0
@@ -568,6 +569,9 @@ func _update_pain() -> void:
 func _hurt(amount: float, lines: Array, min_gap := 0.0) -> void:
 	pain = minf(100.0, pain + amount)
 	_flinch(amount)
+	# machucou: vibração forte (proporcional ao estrago)
+	if amount >= 2.0:
+		GameData.vibrate(int(clampf(40.0 + amount * 5.0, 50.0, 140.0)), clampf(0.6 + amount * 0.03, 0.6, 1.0))
 	if pain >= 100.0 and not finished:
 		_update_pain()
 		return
@@ -576,7 +580,6 @@ func _hurt(amount: float, lines: Array, min_gap := 0.0) -> void:
 		face.hurt()
 		_say(lines.pick_random())
 		Sfx.play("ouch", 0.15, -2)
-		GameData.vibrate(90, 1.0)
 		body_flinch()
 
 func body_flinch() -> void:
@@ -624,7 +627,8 @@ func _update_deform(delta: float) -> void:
 	var ppos := tool_model.global_position
 	var qa := 0.0
 	var qpos := Vector3(0, -10, 0)
-	if pressing and selected != "" and tool_model.visible:
+	# só afunda a pele quando a ferramenta está sendo usada (segurando o botão)
+	if pressing and triggering and selected != "" and tool_model.visible:
 		match selected:
 			"espremedor":
 				pa = 0.006
@@ -649,12 +653,24 @@ func _update_deform(delta: float) -> void:
 				pa = 0.003
 	press_cur = lerpf(press_cur, pa, minf(1.0, delta * 14.0))
 	pull_cur = lerpf(pull_cur, qa, minf(1.0, delta * 10.0))
+	_press_pos = ppos
+	_press_r = pr
 	RenderingServer.global_shader_parameter_set("press_pos", ppos)
 	RenderingServer.global_shader_parameter_set("press_amt", press_cur)
 	RenderingServer.global_shader_parameter_set("press_r", pr)
 	RenderingServer.global_shader_parameter_set("pull_pos", qpos)
 	RenderingServer.global_shader_parameter_set("pull_amt", pull_cur)
 	RenderingServer.global_shader_parameter_set("pull_r", 0.03)
+
+var _press_pos := Vector3.ZERO
+var _press_r := 0.04
+## Quanto a pele sobe/desce neste ponto (mesma conta do deform.gdshaderinc)
+func _skin_dy(p: Vector3) -> float:
+	var dp := Vector2(p.x - _press_pos.x, p.z - _press_pos.z)
+	var r2 := _press_r * _press_r
+	var k := exp(-dp.dot(dp) / r2)
+	var ring := exp(-pow(dp.length() - _press_r * 0.6, 2.0) / (r2 * 0.08))
+	return -press_cur * (k * 0.6 + ring * 0.6) + press_cur * 0.5 * exp(-dp.dot(dp) / (r2 * 0.12))
 
 func _update_tool_model() -> void:
 	if not pressing or selected == "":
@@ -670,10 +686,10 @@ func _update_tool_model() -> void:
 		var d := cam.project_ray_normal(last_pos)
 		pos = o + d * ((0.05 - o.y) / d.y)
 	else:
-		pos = hit[0] + hit[1] * 0.006
+		# encosta na pele: desce só o quanto a pele afundou ali (não atravessa)
+		pos = hit[0] + hit[1] * 0.005 + Vector3(0, _skin_dy(hit[0]), 0)
 	if active and active.mech() == Defs.Mech.PULL and triggering:
 		pos = pos.lerp(active.grip_point(), 0.6)
-	pos -= Vector3(0, press_cur * 0.8, 0)
 	if not tool_model.has_meta("shown"):
 		tool_pos = pos
 		tool_model.set_meta("shown", true)
@@ -684,8 +700,8 @@ func _update_tool_model() -> void:
 	tool_model.vel = tool_vel
 	var cb := cam.global_basis
 	var y := (Vector3.UP * 0.75 + cb.z * 0.35 + cb.x * 0.35 - Vector3(tool_vel.x, 0, tool_vel.z) * 0.15).normalized()
-	if selected == "pano":
-		# o pano deita sobre a pele, alinhado com a superfície
+	if selected == "pano" or selected == "lixa":
+		# pano e lixa deitam sobre a pele, alinhados com a superfície
 		tool_model.drape_body = body
 		y = (hit[1] if not hit.is_empty() else Vector3.UP).lerp(Vector3.UP, 0.3).normalized()
 	var x := (cb.x - y * cb.x.dot(y)).normalized()
@@ -778,6 +794,7 @@ func _tool_up() -> void:
 	if pressing:
 		_release()
 
+const STICK_PX := 230.0          # arrasto (px, para cima) para colar o curativo inteiro
 const HARMFUL := ["agulha", "bisturi", "alicate", "lamina", "raspador", "lixa", "espremedor", "pinca"]
 
 ## Segundo dedo: só ele faz a ferramenta agir (furar, cortar, limpar, puxar, colar...)
@@ -792,14 +809,22 @@ func _trigger(on: bool) -> void:
 		return
 	if not pressing or selected == "":
 		return
-	GameData.vibrate(12)
+	GameData.vibrate(10, 0.25)
 	var a := active
 	if a == null:
 		var p := _pick_problem(last_pos)
 		if p == null:
+			# problema já tratado com uma ferramenta que ele usou: continua fazendo efeito
+			var dp := _pick_done(last_pos)
+			if dp and dp.used_tool(selected):
+				after_p = dp
+				return
 			_skin_touch(last_pos)
 			return
 		if p.tool() != selected:
+			if p.used_tool(selected):
+				after_p = p
+				return
 			_wrong(p, last_pos)
 			return
 		_start_on(p, last_pos)
@@ -814,7 +839,10 @@ func _act_start(a: Problem) -> void:
 			if not a.pick(last_pos, 70.0, cam):
 				_toast("Mire em cima de um!", UIKit.YELLOW, 30, 0.6)
 		Defs.Mech.TAP:
-			a.tap()
+			# curativo: começa a colar embaixo; arrastando para cima ele vai assentando
+			grip_start = last_pos
+			a.stick(maxf(a.progress, 0.04))
+			GameData.vibrate(10, 0.25)
 		Defs.Mech.PULL:
 			grip_start = last_pos
 			pull_max = 0.0
@@ -841,6 +869,18 @@ func _within(p: Problem, pos: Vector2, mult := 1.0) -> bool:
 	return cam.unproject_position(p.center()).distance_to(pos) < _screen_radius(p) * mult + 22.0
 
 ## Problema sob o dedo. Se houver vários, prefere o que aceita a ferramenta escolhida.
+func _pick_done(pos: Vector2) -> Problem:
+	var best: Problem = null
+	var bd := INF
+	for p in problems:
+		if not p.done:
+			continue
+		var d := cam.unproject_position(p.center()).distance_to(pos)
+		if d < _screen_radius(p) * 1.3 + 22.0 and d < bd:
+			bd = d
+			best = p
+	return best
+
 func _pick_problem(pos: Vector2, mult := 1.25) -> Problem:
 	var best: Problem = null
 	var bd := INF
@@ -885,12 +925,30 @@ func _press(pos: Vector2) -> void:
 
 ## Ferramenta afiada em pele saudável machuca
 func _skin_touch(pos: Vector2) -> void:
-	if selected == "" or not Defs.TOOLS[selected]["sharp"]:
+	if selected == "" or not selected in HARMFUL:
 		return
 	var hit := _ray_body(pos)
 	if hit.is_empty() or now - last_skin_hurt < 1.0:
 		return
 	last_skin_hurt = now
+	if not Defs.TOOLS[selected]["sharp"]:
+		mistakes += 1
+		if selected == "lixa":
+			# lixa na pele boa: esfola (machucado pequeno, raso)
+			_hurt(6.0, Defs.OUCH)
+			_toast("Você esfolou a pele!", UIKit.RED, 30, 1.0)
+			var wl := _make_wound(hit[0], hit[1])
+			if wl:
+				wl.blunt_kind = "lixa"
+				wl.wound_stroke(hit[0], true)
+				skin_cut = wl
+				Sfx.play("scrub")
+		else:
+			# espremedor/pinça apertando a pele boa: belisca e fica roxo
+			_hurt(7.0, Defs.OUCH)
+			_bruise(hit[0])
+			Sfx.play("squish", 0.2, -6)
+		return
 	mistakes += 1
 	_hurt(10.0, Defs.OUCH)
 	if selected in ["bisturi", "lamina", "alicate"]:
@@ -904,6 +962,28 @@ func _skin_touch(pos: Vector2) -> void:
 		else:
 			Sfx.play("poke")
 			_toast("Você furou a pele! Vai precisar limpar e fazer curativo.", UIKit.RED, 26, 1.6)
+
+## Marca roxa/vermelha de beliscão que some sozinha
+func _bruise(pos: Vector3) -> void:
+	var mi := MeshInstance3D.new()
+	var rot := randf() * TAU
+	mi.mesh = MeshGen.patch(body, pos, 0.035, rot, 0.0035)
+	var m := MeshGen.shader_mat(Problem.LESION)
+	m.set_shader_parameter("kind", Problem.L_BRUISE)
+	m.set_shader_parameter("skin", body.skin_mat.get_shader_parameter("skin"))
+	m.set_shader_parameter("seed", randf() * 40.0)
+	m.set_shader_parameter("rot", rot)
+	m.set_shader_parameter("half_size", 0.035)
+	m.set_shader_parameter("strength", 0.0)
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	body.add_child(mi)
+	mi.global_position = pos
+	var tw := create_tween()
+	tw.tween_method(func(v): m.set_shader_parameter("strength", v), 0.0, 0.9, 0.35)
+	tw.tween_interval(5.0)
+	tw.tween_method(func(v): m.set_shader_parameter("strength", v), 0.9, 0.0, 3.0)
+	tw.tween_callback(mi.queue_free)
 
 func _make_wound(pos: Vector3, normal: Vector3) -> Problem:
 	if wounds >= MAX_WOUNDS:
@@ -1011,7 +1091,16 @@ func _cut_drag(p: Problem, pos: Vector2, delta_t: float) -> void:
 				if not hit.is_empty() and selected == "bisturi":
 					_make_wound(hit[0], hit[1])
 
-func _do_rub(p: Problem, pos: Vector2, px: float) -> void:
+var last_lixa_hint := -10.0
+func _do_rub(p: Problem, pos: Vector2, px: float, delta := Vector2.ZERO) -> void:
+	# lixa só lixa indo e voltando ao longo dela (na horizontal), como na vida real
+	if selected == "lixa" and px > 0.0:
+		if absf(delta.x) < absf(delta.y) * 1.2:
+			if now - last_lixa_hint > 2.5 and px > 4.0:
+				last_lixa_hint = now
+				_toast("Lixe de um lado para o outro (na horizontal) ↔", UIKit.YELLOW, 28, 1.2)
+			return
+		px = absf(delta.x)
 	var hit := _ray_body(pos)
 	var wpos: Vector3
 	if not hit.is_empty():
@@ -1050,10 +1139,20 @@ func _drag(pos: Vector2) -> void:
 				_act_start(p)
 	if not triggering:
 		return
+	# ferramenta de etapa já feita: continua com efeito leve
+	if after_p and is_instance_valid(after_p) and rel > 0.5:
+		var ah := _ray_body(pos)
+		if not ah.is_empty() and ah[0].distance_to(after_p.center()) < after_p.size * 1.8:
+			if after_p.after_effect(ah[0], selected):
+				_rub_fx(after_p)
+				if buzz_t <= 0.0:
+					buzz_t = 0.12
+					GameData.vibrate(5, 0.12)
 	# arrastando a ferramenta errada por cima: estraga mais e dói
 	if wrong_p and is_instance_valid(wrong_p) and not wrong_p.done and selected in HARMFUL:
 		var wh := _ray_body(pos)
 		if not wh.is_empty() and wh[0].distance_to(wrong_p.center()) < wrong_p.size * 1.7:
+			wrong_p.blunt_kind = selected
 			wrong_p.aggravate(wh[0], Defs.TOOLS[selected]["sharp"], false)
 			pain = minf(100.0, pain + rel * 0.05)
 			Sfx.play_throttled("cut" if Defs.TOOLS[selected]["sharp"] else "scrub", 0.1, 0.3, -6)
@@ -1075,7 +1174,7 @@ func _drag(pos: Vector2) -> void:
 	match a.mech():
 		Defs.Mech.RUB:
 			if _within(a, pos, 1.8):
-				_do_rub(a, pos, rel)
+				_do_rub(a, pos, rel, pos - prev_pos)
 		Defs.Mech.CUT:
 			if a.has_paint_cut():
 				_paint_cut(a, pos)
@@ -1083,6 +1182,13 @@ func _drag(pos: Vector2) -> void:
 				_cut_drag(a, pos, 1.0 / 60.0)
 		Defs.Mech.PULL:
 			frame_pull += rel
+		Defs.Mech.TAP:
+			var up := grip_start.y - pos.y
+			if up > 0.0:
+				var before := a.progress
+				a.stick(maxf(a.progress, up / STICK_PX))
+				if a.progress - before > 0.03:
+					GameData.vibrate(6, 0.15)
 		Defs.Mech.SWEEP:
 			# o barbeador corta pela linha das lâminas (em _blade_sweep, a cada quadro)
 			if selected != "lamina":
@@ -1118,6 +1224,7 @@ func _release() -> void:
 	active = null
 	skin_cut = null
 	wrong_p = null
+	after_p = null
 	stroke_locked = false
 	_update_labels()
 
@@ -1137,6 +1244,7 @@ func _blade_sweep() -> void:
 	var b0: Vector2 = _blade_prev[1] if _blade_prev.size() == 2 else b1
 	if active.sweep_blade(a0, b0, a1, b1, 16.0, cam) > 0:
 		Sfx.play_throttled("cut", 0.06, 0.2, -8)
+		GameData.vibrate(6, 0.2)
 	_blade_prev = [a1, b1]
 
 func _rub_fx(p: Problem) -> void:
@@ -1173,7 +1281,7 @@ func _wrong(p: Problem, pos: Vector2) -> void:
 	last_mistake = now
 	mistakes += 1
 	var sharp: bool = Defs.TOOLS[selected]["sharp"]
-	_hurt(16.0 if sharp else 9.0, Defs.OUCH)
+	_hurt(16.0 if sharp else (5.0 if selected == "lixa" else 8.0), Defs.OUCH)
 	_float_text("AI!", cam.unproject_position(p.center()) + Vector2(0, -50), UIKit.RED, 46)
 	_toast("Ferramenta errada! Piorou!", UIKit.RED, 40, 1.0)
 	# fica pior ALI MESMO: corta/esfola o próprio machucado, sangra, inflama
@@ -1181,6 +1289,7 @@ func _wrong(p: Problem, pos: Vector2) -> void:
 	var hit := _ray_body(pos)
 	var wp: Vector3 = hit[0] if not hit.is_empty() else p.center()
 	wrong_p = p
+	p.blunt_kind = selected
 	if p.aggravate(wp, sharp, true):
 		earned -= 10
 		_float_text("-10", cam.unproject_position(p.center()) + Vector2(60, -10), UIKit.RED, 38)
@@ -1213,7 +1322,7 @@ func _on_stage_done(p: Problem, fin: bool) -> void:
 	if combo >= 2:
 		_toast("COMBO x%d!" % combo, UIKit.PINK, 48, 0.8)
 	Sfx.play("coin", 0.05, -8)
-	GameData.vibrate(25)
+	GameData.vibrate(20, 0.45)
 	_update_progress()
 	for q in problems:
 		q.show_guide(q == focus and q.tool() == selected)
@@ -1771,6 +1880,32 @@ func _pause() -> void:
 		dim.queue_free()
 		modal_open = false)
 	vb.add_child(cont)
+	# opções sempre à mão: vibração, sons e música
+	var vib := UIKit.btn("", UIKit.PINK, 26, Vector2(300, 66))
+	var upd_vib := func(): vib.text = "Vibração: " + ("LIGADA" if GameData.vibrate_on else "DESLIGADA")
+	upd_vib.call()
+	vib.pressed.connect(func():
+		GameData.vibrate_on = not GameData.vibrate_on
+		GameData.save_game()
+		upd_vib.call()
+		GameData.vibrate(40, 0.6))
+	vb.add_child(vib)
+	var snd := UIKit.btn("", UIKit.YELLOW, 26, Vector2(300, 66))
+	var upd_snd := func(): snd.text = "Sons: " + ("LIGADOS" if GameData.sound_on else "DESLIGADOS")
+	upd_snd.call()
+	snd.pressed.connect(func():
+		GameData.sound_on = not GameData.sound_on
+		GameData.save_game()
+		upd_snd.call())
+	vb.add_child(snd)
+	var mus := UIKit.btn("", UIKit.BLUE, 26, Vector2(300, 66))
+	var upd_mus := func(): mus.text = "Música: " + ("LIGADA" if GameData.music_on else "DESLIGADA")
+	upd_mus.call()
+	mus.pressed.connect(func():
+		Sfx.set_music_enabled(not GameData.music_on)
+		GameData.save_game()
+		upd_mus.call())
+	vb.add_child(mus)
 	var rst := UIKit.btn("Reiniciar", UIKit.BLUE, 30, Vector2(300, 78))
 	rst.pressed.connect(func(): get_tree().reload_current_scene())
 	vb.add_child(rst)

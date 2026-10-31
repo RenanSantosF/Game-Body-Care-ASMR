@@ -524,6 +524,12 @@ func _paint(mi: MeshInstance3D, wpos: Vector3, brush_r: float, strength: float) 
 func _lmat(mi: MeshInstance3D) -> ShaderMaterial:
 	return mi.material_override as ShaderMaterial
 
+func _lget(key: String, param: String) -> float:
+	if n.has(key) and is_instance_valid(n[key]):
+		var v = (n[key].material_override as ShaderMaterial).get_shader_parameter(param)
+		return v if v != null else 0.0
+	return 0.0
+
 func _lset(key: String, param: String, value) -> void:
 	if n.has(key) and is_instance_valid(n[key]):
 		(n[key].material_override as ShaderMaterial).set_shader_parameter(param, value)
@@ -591,47 +597,112 @@ func _fly_off(nd: Node3D, extra := Vector3.ZERO) -> void:
 	tw.tween_property(nd, "scale", nd.scale * 0.01, 0.3).set_delay(0.3)
 	tw.chain().tween_callback(nd.hide)
 
-## Curativo adesivo de verdade: fita perfurada + gaze, colado acompanhando a pele
-func _bandage(w: float, l: float, at := Vector3.INF, along := Vector3.INF) -> void:
+## Raio da ferida que o curativo precisa cobrir
+func wound_radius() -> float:
+	var k := 1.0
+	match id:
+		"furunculo", "abscesso", "carbunculo": k = 1.08
+		"queimadura", "larvas", "favo", "ralado": k = 1.05
+		"bolha", "cisto", "espinha": k = 0.95
+		"machucado": k = 1.3
+		"pontos": k = 1.0
+	if damage > 0:
+		k = maxf(k, 1.25)
+	return size * k
+
+## Arrancado com a pinça: tranco rápido na direção do puxão, fica preso na pinça e depois cai
+func _pluck(nd: Node3D) -> void:
+	if nd == null or not is_instance_valid(nd):
+		return
+	var dirv := (pull_dir + Vector3.UP * 1.3).normalized()
+	var start := nd.global_position
+	var tw := create_tween()
+	tw.tween_property(nd, "global_position", start + dirv * 0.08, 0.06).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	tw.parallel().tween_property(nd, "rotation", nd.rotation + Vector3(rng.randf_range(-0.9, 0.9), 0, rng.randf_range(-0.7, 0.7)), 0.06)
+	tw.tween_property(nd, "global_position", start + dirv * 0.11 + Vector3.UP * 0.03, 0.2).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(0.35)
+	tw.tween_property(nd, "global_position", start + dirv * 0.18 + Vector3(0.05, 0.45, 0.1), 0.35).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(nd, "scale", nd.scale * 0.01, 0.35)
+	tw.tween_callback(nd.hide)
+	Sfx.play("pop", 0.2, -4)
+	GameData.vibrate(28, 0.55)
+
+## Curativo adesivo de verdade: fita perfurada + gaze (a gaze cobre a ferida inteira),
+## colado acompanhando a pele. manual = vai colando conforme o jogador arrasta (stick()).
+func _bandage(r_along: float, r_side: float, at := Vector3.INF, along := Vector3.INF, lift := 0.014, manual := false) -> void:
 	if n.has("bandage"):
 		return
 	var c := global_position if at == Vector3.INF else at
-	var fwd := global_basis.z if along == Vector3.INF else along
+	var fwd := Vector3(1, 0, 0) if along == Vector3.INF else along
 	fwd.y = 0.0
 	if fwd.length() < 0.01:
 		fwd = Vector3(1, 0, 0)
 	fwd = fwd.normalized()
 	var rot := atan2(fwd.z, fwd.x)
-	var half := maxf(w, l) * 0.5
+	# gaze ocupa |u| < 0.55 e |v| < aspect*0.78 do adesivo
+	var half := maxf(r_along, 0.02) / 0.55
+	var aspect := clampf(r_side / (0.78 * half), 0.32, 0.92)
 	var mi := MeshInstance3D.new()
-	mi.mesh = MeshGen.patch(body, c, half, rot, 0.014, 22)
+	mi.mesh = MeshGen.patch(body, c, half, rot, lift, 24)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var m := MeshGen.shader_mat("res://shaders/bandage.gdshader")
-	m.set_shader_parameter("aspect", clampf(minf(w, l) / maxf(w, l), 0.2, 0.9))
+	m.set_shader_parameter("aspect", aspect)
 	m.set_shader_parameter("rot", rot)
 	m.set_shader_parameter("half_size", half)
 	m.set_shader_parameter("unroll", 0.0)
-	# sangue ou pus manchando a gaze por baixo
-	var bleedy := id in ["furunculo", "verme", "machucado", "unha_encravada", "larvas"]
 	m.set_shader_parameter("stain", 0.0)
-	m.set_shader_parameter("stain_col", Color(0.62, 0.08, 0.1) if bleedy else Color(0.85, 0.72, 0.35))
+	m.set_shader_parameter("stain_col", Color(0.62, 0.08, 0.1) if _bleedy() else Color(0.85, 0.72, 0.35))
 	m.render_priority = 20
 	mi.material_override = m
 	body.add_child(mi)
 	var sp := body.surface(c.x, c.z)
 	mi.global_position = sp[0] if not sp.is_empty() else c
 	n["bandage"] = mi
-	var tw := create_tween()
-	tw.tween_method(func(v): m.set_shader_parameter("unroll", v), 0.0, 1.0, 0.55).set_ease(Tween.EASE_OUT)
-	tw.tween_method(func(v): m.set_shader_parameter("stain", v), 0.0, 0.55 if bleedy else 0.25, 2.5)
+	if not manual:
+		var tw := create_tween()
+		tw.tween_method(func(v): m.set_shader_parameter("unroll", v), 0.0, 1.0, 0.55).set_ease(Tween.EASE_OUT)
+		_bandage_done()
 	Sfx.play("tap")
+
+func _bleedy() -> bool:
+	return id in ["furunculo", "verme", "machucado", "unha_encravada", "larvas", "carbunculo", "abscesso", "pontos", "queimadura"] or damage > 0
+
+## Curativo assentado: a mancha de sangue/pus atravessa a gaze aos poucos
+func _bandage_done() -> void:
+	if not n.has("bandage"):
+		return
+	var m: ShaderMaterial = n["bandage"].material_override
+	create_tween().tween_method(func(v): m.set_shader_parameter("stain", v), 0.0, 0.55 if _bleedy() else 0.25, 2.5)
 	Sfx.play_throttled("scrub", 0.1, 0.1, -12)
 
-func _nail_bandage() -> void:
+## Curativo na unha: cobre a unha toda e a ponta do dedo (levantado acima da unha)
+func _nail_bandage(manual := false) -> void:
 	var nd: Node3D = nail["node"]
-	var dirv: Vector3 = nail["dir"]
-	var at := nd.to_global(Vector3(0, 0, nail["len"] * 0.6))
-	_bandage(nail["r"] * 2.6, nail["len"] * 2.6, at, dirv)
+	var at := nd.to_global(Vector3(0, 0, nail["len"] * 0.5))
+	_bandage(nail["len"] * 0.72, nail["w"] * 0.75, at, nail["dir"], 0.03, manual)
+
+## Colar o curativo arrastando: f vai de 0 (começo) a 1 (colado até o fim)
+func stick(f: float) -> void:
+	if done or mech() != Defs.Mech.TAP:
+		return
+	if not n.has("bandage"):
+		if nail.is_empty():
+			_bandage(wound_radius(), wound_radius(), _bandage_center(), Vector3.INF, 0.014, true)
+		else:
+			_nail_bandage(true)
+	f = clampf(f, 0.0, 1.0)
+	if f <= progress:
+		return
+	progress = f
+	var m: ShaderMaterial = n["bandage"].material_override
+	m.set_shader_parameter("unroll", f)
+	Sfx.play_throttled("scrub", 0.12, 0.2, -14)
+	if f >= 1.0:
+		_bandage_done()
+		_complete_stage()
+
+func _bandage_center() -> Vector3:
+	return center()
 
 func _burst(pos: Vector3, c: Color, amount := 16, spd := 1.0, sz := 0.012, spread := 40.0) -> void:
 	var kind := -1
@@ -1393,6 +1464,8 @@ func _build_machucado() -> void:
 
 ## Ferramenta errada EM CIMA do problema: piora ali mesmo (corta/esfola, sangra, inflama)
 ## e cobra trabalho extra: limpar o sangue (e curativo, se tiver). Retorna true no 1º dano do toque.
+var blunt_kind := ""   # ferramenta sem corte que está estragando (lixa esfola; outras apertam)
+
 func aggravate(wpos: Vector3, sharp: bool, first: bool) -> bool:
 	if done:
 		return false
@@ -1429,12 +1502,45 @@ func aggravate(wpos: Vector3, sharp: bool, first: bool) -> bool:
 	if sharp:
 		fx2.cut_to(uv, 2.8, 1.0)
 		fx2.bleed = minf(1.0, fx2.bleed + 0.12)
+	elif blunt_kind == "lixa":
+		# esfolado pequeno: arranha a pele e brotam pontinhos de sangue
+		fx2.add_blood(uv + Vector2(randf_range(-0.03, 0.03), randf_range(-0.03, 0.03)), 2.2, 0.05)
+		fx2.cut_to(uv, 2.4, 0.18)
+		fx2.bleed = minf(0.35, fx2.bleed + 0.015)
 	else:
-		# esfolado: arranca a pelinha e brota sangue onde arrastou
-		fx2.add_blood(uv, 4.5, 0.12)
-		fx2.cut_to(uv, 4.0, 0.35)
-		fx2.bleed = minf(0.6, fx2.bleed + 0.03)
+		# apertou/beliscou: fica roxo e vermelho, quase sem sangue
+		_lmat(host2).set_shader_parameter("strength", minf(1.2, 0.35 + 0.25 * damage))
+		fx2.add_blood(uv, 1.6, 0.03)
 	return fresh
+
+## A ferramenta já foi usada numa etapa anterior deste problema (continuar não machuca)
+func used_tool(t: String) -> bool:
+	var st: Array = def["stages"]
+	var upto := st.size() if done else stage
+	for i in upto:
+		if st[i][0] == t:
+			return true
+	return false
+
+## Continuar usando uma ferramenta de etapa já feita: ainda faz um efeito leve e satisfatório
+func after_effect(wpos: Vector3, t: String) -> bool:
+	match t:
+		"pomada":
+			_spread_cream(wpos, 0.06)
+		"lixa", "raspador":
+			for key in ["callus", "crust"]:
+				if n.has(key) and is_instance_valid(n[key]):
+					var m := _lmat(n[key])
+					var hv = m.get_shader_parameter("heal")
+					m.set_shader_parameter("heal", minf(1.0, (hv if hv != null else 0.0) + 0.004))
+		"espremedor":
+			if id in ["espinha", "cisto", "furunculo", "abscesso", "carbunculo", "unha_pus", "acne_costas"] and rng.randf() < 0.08:
+				_burst(wpos + Vector3.UP * 0.01, PUS_C, 2, 0.3, 0.005, 30.0)
+		"pano", "algodao", "lamina":
+			pass
+		_:
+			return false
+	return true
 
 ## Depois de piorar: precisa limpar o sangue (e fechar com curativo, se tiver)
 func _add_extra_stages() -> void:
@@ -1475,6 +1581,13 @@ func wound_stroke(wpos: Vector3, first: bool) -> void:
 	var fx: FxMap = cut_host.get_meta("fx")
 	if first:
 		fx.end_stroke()
+	if blunt_kind == "lixa":
+		# arranhão de lixa: raso e com pontinhos de sangue
+		var uv := host_uv(cut_host, wpos)
+		fx.cut_to(uv, 2.6, 0.22)
+		fx.add_blood(uv + Vector2(randf_range(-0.04, 0.04), randf_range(-0.04, 0.04)), 2.0, 0.08)
+		fx.bleed = maxf(fx.bleed, 0.3)
+		return
 	fx.cut_to(host_uv(cut_host, wpos), 3.4)
 	fx.bleed = 1.0
 
@@ -1681,6 +1794,8 @@ func _visual() -> void:
 				for c in hair.get_children():
 					c.queue_free()
 				_tube(T_HAIR, pts, _taper(6, 0.0032, 0.0018), hair, 5).material_override = MeshGen.std(Color(0.12, 0.08, 0.05), 0.5, 0.0, "hair_a")
+				# raiz branca (bulbo) aparecendo conforme sai
+				MeshGen.inst(hair, MeshGen.sphere(1.0), MeshGen.std(Color(0.97, 0.95, 0.9), 0.4, 0.0, "bulb"), pts[0], Vector3(0.0045, 0.006, 0.0045))
 				n["grip"].position = pts[5]
 				n["loop"].scale = Vector3.ONE * (1.0 - p)
 		"carrapato":
@@ -1744,6 +1859,8 @@ func _visual() -> void:
 			elif stage == 3:
 				_lset("favo", "heal", 0.45 + p * 0.55)
 				_lset("red", "heal", p)
+	if tl == "pomada" and p > 0.0 and not id in ["ralado", "queimadura", "crosta", "calo", "verruga", "larvas", "favo", "fungo_unha"]:
+		_lset("red", "heal", maxf(_lget("red", "heal"), p * 0.45))
 	if tl == "pomada" and p > 0.0:
 		if rng.randf() < 0.3:
 			_burst(center() + Vector3(rng.randf_range(-size, size), 0.01, rng.randf_range(-size, size)) * Vector3(1, 1, 1), Color(1, 1, 1), 2, 0.1, 0.008, 80.0)
@@ -1862,7 +1979,7 @@ func _remove_item(it: Dictionary) -> void:
 		"piolhos":
 			_fly_off(it["node"])
 			Sfx.play("pop", 0.4, -6)
-	GameData.vibrate(15)
+	GameData.vibrate(14, 0.3)
 
 # =================================================================== início/fim de etapa
 
@@ -1883,7 +2000,7 @@ func _on_stage_end(s: int) -> void:
 		# etapa extra (o jogador piorou): limpar estanca, curativo fecha
 		if def["stages"][s][0] == "curativo":
 			if nail.is_empty():
-				_bandage(maxf(size * 2.4, 0.11), maxf(size * 1.5, 0.07))
+				_bandage(wound_radius(), wound_radius())
 			else:
 				_nail_bandage()
 		else:
@@ -1894,10 +2011,8 @@ func _on_stage_end(s: int) -> void:
 					fx.drips.clear()
 		return
 	if def["stages"][s][0] == "curativo" and not n.has("bandage"):
-		if id == "pontos":
-			_bandage(size * 2.2, size * 1.1, Vector3.INF, n["dir"])
-		elif nail.is_empty():
-			_bandage(maxf(size * 2.4, 0.11), maxf(size * 1.5, 0.07))
+		if nail.is_empty():
+			_bandage(wound_radius(), wound_radius())
 		else:
 			_nail_bandage()
 		_on_stage_end_rest(s)
@@ -1948,7 +2063,7 @@ func _on_stage_end_rest(s: int) -> void:
 				Sfx.play("poke")
 				_burst(global_position + global_basis.y * 0.02, Color(1, 1, 0.95, 0.7), 5, 0.3, 0.006, 40.0)
 			elif s == 1:
-				_fly_off(n["sac"])
+				_pluck(n["sac"])
 				_deflate("dome", 0.5)
 				n["blood"] = _lesion(L_BLOOD, 0.035, Vector2.ZERO, true, 0.009)
 				n["crater"] = _lesion(L_WOUND, 0.025, Vector2.ZERO, false, 0.006)
@@ -1966,7 +2081,7 @@ func _on_stage_end_rest(s: int) -> void:
 				Sfx.play("splat")
 		"farpa":
 			if s == 0:
-				_fly_off(n["piv"])
+				_pluck(n["piv"])
 				n["blood"] = _lesion(L_BLOOD, 0.03, Vector2.ZERO, true, 0.008)
 				Sfx.play("pull")
 		"pelo_encravado":
@@ -1974,14 +2089,14 @@ func _on_stage_end_rest(s: int) -> void:
 				_lset("dome", "hole", 1.0)
 				Sfx.play("poke")
 			elif s == 1:
-				_fly_off(n["hair"])
+				_pluck(n["hair"])
 				n["loop"].hide()
 				n["blood"] = _lesion(L_BLOOD, 0.028, Vector2.ZERO, true, 0.008)
 				_shrink("dome", 0.6)
 				Sfx.play("pull")
 		"carrapato":
 			if s == 0:
-				_fly_off(n["tick"])
+				_pluck(n["tick"])
 				n["blood"] = _lesion(L_BLOOD, 0.035, Vector2.ZERO, true, 0.008)
 				Sfx.play("pull")
 		"cravos":
@@ -2017,7 +2132,7 @@ func _on_stage_end_rest(s: int) -> void:
 				Sfx.play("cut")
 				_burst(n["holder"].global_position, BLOOD_C, 5, 0.4, 0.006, 40.0)
 			elif s == 1:
-				_fly_off(n["sliver"])
+				_pluck(n["sliver"])
 				_shrink("dome", 0.25)
 				var p2: Vector3 = n["holder"].global_position
 				n["splat"] = _lesion(L_PUS, nail["w"] * 0.75, Vector2(p2.x - gp.x, p2.z - gp.z), true, 0.008)
@@ -2042,22 +2157,22 @@ func _on_stage_end_rest(s: int) -> void:
 				_burst(gp + up * 0.04, BLOOD_C, 10, 1.0, 0.01, 50.0)
 				popped.emit(self, PUS_C)
 				Sfx.play("splat")
-			elif s == 3:
-				_bandage(size * 2.4, size * 1.6)
+			elif s == 4:
+				_bandage(wound_radius(), wound_radius())
 		"verme":
 			if s == 0:
 				_end_guide()
 				Sfx.play("cut")
 			elif s == 1:
-				_fly_off(n["worm"], Vector3(0, 0.3, 0))
+				_pluck(n["worm"])
 				n["bump"].hide()
 				n["blood"] = _lesion(L_BLOOD, size * 0.8, Vector2.ZERO, true, 0.009)
 				_burst(_worm_pts[_worm_pts.size() / 2], BLOOD_C, 14, 1.0, 0.01, 45.0)
 				popped.emit(self, BLOOD_C)
 				Sfx.play("splat")
-			elif s == 3:
+			elif s == 4:
 				_heal_lesion("track", 0.6)
-				_bandage(size * 2.2, size * 1.0)
+				_bandage(wound_radius(), wound_radius() * 0.7)
 		"verruga":
 			if s == 0:
 				Sfx.play("freeze")
@@ -2068,7 +2183,7 @@ func _on_stage_end_rest(s: int) -> void:
 				pass
 		"machucado":
 			if s == 1:
-				_bandage(size * 2.2, size * 1.4)
+				_bandage(wound_radius(), wound_radius())
 		"acne_costas":
 			if s == 0:
 				n["splat"] = _lesion(L_PUS, size * 1.15, Vector2.ZERO, true, 0.008)

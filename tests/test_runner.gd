@@ -86,7 +86,11 @@ func solve(game, p: Problem) -> void:
 				g += 1
 				var a := g * 0.35
 				var rr := R * (0.5 + 0.5 * sin(g * 0.021))
-				game._drag(c + Vector2(cos(a), sin(a)) * rr)
+				if game.selected == "lixa":
+					# lixa: vai e vem na horizontal, descendo devagar
+					game._drag(c + Vector2(sin(g * 0.3) * R, sin(g * 0.013) * R * 0.8))
+				else:
+					game._drag(c + Vector2(cos(a), sin(a)) * rr)
 				await get_tree().process_frame
 			game._release()
 		Defs.Mech.CUT:
@@ -117,9 +121,13 @@ func solve(game, p: Problem) -> void:
 				await get_tree().process_frame
 			game._release()
 		Defs.Mech.TAP:
-			game._press(c)
+			# curativo: segura e arrasta para cima até o fim
+			var c0 := c + Vector2(0, 120)
+			game._press(c0)
 			game._trigger(true)
-			await get_tree().process_frame
+			for k in 24:
+				game._drag(c0 + Vector2(0, -k * 12.0))
+				await get_tree().process_frame
 			game._trigger(false)
 			game._release()
 		Defs.Mech.SWEEP, Defs.Mech.PICK:

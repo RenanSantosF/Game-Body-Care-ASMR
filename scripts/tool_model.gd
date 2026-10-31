@@ -164,8 +164,16 @@ func set_tool(id: String) -> void:
 			var board := Node3D.new()
 			root.add_child(board)
 			parts["board"] = board
-			MeshGen.inst(board, MeshGen.sphere(1.0), MeshGen.std(Color("c9a3a3"), 0.95), Vector3(0, 0.15, 0), Vector3(0.025, 0.17, 0.006))
-			MeshGen.inst(board, MeshGen.sphere(1.0), MeshGen.std(Color("ff7eb6"), 0.6), Vector3(0, 0.28, 0), Vector3(0.026, 0.05, 0.007))
+			# lixa de unha DEITADA na pele, comprida na horizontal (lixa-se de um lado para o outro)
+			var grit := MeshGen.std(Color("c9a3a3"), 0.98, 0.0, "lixa_grit")
+			var core := MeshGen.std(Color("ff7eb6"), 0.55, 0.0, "lixa_core")
+			MeshGen.inst(board, BoxMesh.new(), core, Vector3(0, 0.0045, 0), Vector3(0.2, 0.003, 0.026))
+			MeshGen.inst(board, BoxMesh.new(), grit, Vector3(0, 0.0022, 0), Vector3(0.196, 0.0018, 0.025))
+			MeshGen.inst(board, BoxMesh.new(), grit, Vector3(0, 0.0068, 0), Vector3(0.196, 0.0018, 0.025))
+			for sx in [-1.0, 1.0]:
+				_sph(board, Vector3(0.006, 0.0045, 0.013), core, Vector3(sx * 0.1, 0.0045, 0))
+			# ponta dos dedos segurando por cima
+			_sph(board, Vector3(0.022, 0.012, 0.016), MeshGen.std(Color("f1c7a8"), 0.6, 0.0, "finger_tip"), Vector3(-0.02, 0.016, 0))
 		"spray":
 			var can := Node3D.new()
 			root.add_child(can)
@@ -314,10 +322,11 @@ func _process(delta: float) -> void:
 	root.rotation = Vector3.ZERO
 	match tool_id:
 		"pinca":
+			# em repouso fica ABERTA; segurando o botão as pontas se fecham (pegam)
 			var closed := grip
 			for side in [-1, 1]:
 				var arm: Node3D = parts["arm%d" % side]
-				arm.rotation.z = lerpf(arm.rotation.z, (0.0 if closed else 0.06) * -side, 0.35)
+				arm.rotation.z = lerpf(arm.rotation.z, (-0.042 if closed else 0.035) * side, 0.4)
 		"agulha":
 			if active and grip:
 				parts["needle"].position.y = -absf(sin(t * 10.0)) * 0.02
@@ -336,9 +345,13 @@ func _process(delta: float) -> void:
 			if active and grip:
 				root.position = Vector3(sin(t * 18.0) * 0.008, 0.0, cos(t * 15.0) * 0.006)
 			_drape()
-		"lamina", "raspador", "lixa":
+		"lamina", "raspador":
 			if active:
 				root.rotation.z = sin(t * 22.0) * 0.1
+		"lixa":
+			# vai e vem deitada na pele
+			if active and grip:
+				root.position = Vector3(sin(t * 20.0) * 0.012, 0.0, 0.0)
 		"alicate":
 			var close := 0.0
 			if active and (grip or mech == Defs.Mech.CUT):
