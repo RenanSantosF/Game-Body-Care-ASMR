@@ -52,8 +52,9 @@ float blob(vec2 uv, float s, float edge) {
 	return 1.0 - smoothstep(edge - 0.3, edge, length(uv) + (n - 0.5) * 0.75);
 }
 
+uniform float fill = 0.0;          // preenche a máscara toda (pomada cobrindo tudo no fim)
 float clean_m(vec2 uv) {
-	return use_mask > 0.5 ? texture(mask, uv * 0.5 + 0.5).r : 0.0;
+	return use_mask > 0.5 ? max(texture(mask, uv * 0.5 + 0.5).r, fill * (0.75 + 0.25 * fbm(uv * 3.0 + seed))) : 0.0;
 }
 
 vec4 fxs(vec2 uv) {
@@ -243,7 +244,7 @@ void fragment() {
 	} else if (kind == CREAM) {
 		// creme branco espesso, com marcas do espalhar
 		float streak = fbm(vec2(uv.x * 3.0, uv.y * 18.0) + seed);
-		a = smoothstep(0.1, 0.55, m) * (1.0 - smoothstep(0.8, 1.0, r)) * (0.7 + 0.25 * streak);
+		a = smoothstep(0.1, 0.55, m) * (1.0 - smoothstep(0.8, 1.0, r)) * (0.55 + 0.25 * streak);
 		col = mix(vec3(0.93, 0.92, 0.88), vec3(1.0, 0.995, 0.98), streak);
 		col = mix(col, skin * 1.05, smoothstep(0.55, 0.1, m) * 0.5);
 		gloss = 0.75;

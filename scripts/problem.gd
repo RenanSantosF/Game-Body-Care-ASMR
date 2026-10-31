@@ -1468,7 +1468,7 @@ func _spread_cream(wpos: Vector3, brush_r: float) -> void:
 		mk.flush()
 		_lmat(cr).render_priority = 2
 		n["cream"] = cr
-	_paint(n["cream"], wpos, brush_r * 1.1, 0.4 * speed)
+	_paint(n["cream"], wpos, brush_r * 1.6, 0.6 * speed)
 
 ## Corte feito pelo jogador (erro) — pintado onde arrastou
 func wound_stroke(wpos: Vector3, first: bool) -> void:
@@ -1905,6 +1905,10 @@ func _on_stage_end(s: int) -> void:
 	_on_stage_end_rest(s)
 
 func _on_stage_end_rest(s: int) -> void:
+	# terminou a pomada: o creme branco cobre o machucado todo (o curativo vai por cima)
+	if def["stages"][s][0] == "pomada" and n.has("cream") and is_instance_valid(n["cream"]):
+		var cm := _lmat(n["cream"])
+		create_tween().tween_method(func(v): cm.set_shader_parameter("fill", v), 0.0, 0.85, 0.7)
 	# antisséptico estanca o sangramento
 	if def["stages"][s][0] == "algodao":
 		for h in fx_hosts:

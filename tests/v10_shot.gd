@@ -57,6 +57,11 @@ func _ready() -> void:
 	await _shot("3_pomada")
 	game._on_touch(1, game.use_btn.center, false)
 	game._on_touch(0, c2, false)
+	while not rl.done and rl.tool() == "pomada":
+		game._select_tool(rl.tool())
+		await runner.solve(game, rl)
+	await _w(1.0)
+	await _shot("3b_pomada_cobrindo")
 	while not rl.done:
 		game._select_tool(rl.tool())
 		await runner.solve(game, rl)
