@@ -1,5 +1,5 @@
 extends Node
-# Teste: ferramenta errada machuca, cria ferida e o paciente vai embora com dor 100.
+# Teste: ferramenta errada machuca, piora o próprio problema (corte + etapas extras) e a dor chega a 100.
 
 func _ready() -> void:
 	for tl in Defs.TOOL_ORDER:
@@ -26,13 +26,9 @@ func _ready() -> void:
 		await get_tree().create_timer(0.9).timeout
 		if game.finished:
 			break
-	print("erros=", game.mistakes, " dor=", int(game.pain), " feridas=", game.problems.size() - n0, " perdeu=", game.finished and game.modal_open)
-	# resolve um machucado
-	var w: Problem = null
-	for q in game.problems:
-		if q.id == "machucado":
-			w = q
-	print("machucado criado: ", w != null)
+	await get_tree().create_timer(1.3).timeout
+	print("erros=", game.mistakes, " dor=", int(game.pain), " feridas_novas=", game.problems.size() - n0, " modal=", game.modal_open)
+	print("espinha piorou: dano=", p.damage, " etapas=", p.def["stages"].size(), " (eram ", Defs.stage_count("espinha"), ")")
 	var out := OS.get_environment("OUT")
 	if out != "":
 		await get_tree().create_timer(1.6).timeout

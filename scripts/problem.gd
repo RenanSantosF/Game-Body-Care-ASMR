@@ -1399,8 +1399,8 @@ func aggravate(wpos: Vector3, sharp: bool, first: bool) -> bool:
 			d.set_meta("base_scale", bs * Vector3(1.06, 1.1, 1.06))
 			d.scale = d.get_meta("base_scale")
 	if sharp:
-		fx2.cut_to(uv, 2.2, 1.0)
-		fx2.bleed = minf(1.0, fx2.bleed + 0.08)
+		fx2.cut_to(uv, 2.8, 1.0)
+		fx2.bleed = minf(1.0, fx2.bleed + 0.12)
 	else:
 		# esfolado: arranca a pelinha e brota sangue onde arrastou
 		fx2.add_blood(uv, 4.5, 0.12)
