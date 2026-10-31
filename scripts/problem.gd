@@ -641,7 +641,8 @@ func wound_radius() -> float:
 		"pontos": k = 1.0
 	if damage > 0:
 		k = maxf(k, 1.25)
-	return size * k
+	# a pomada já cobre a ferida toda: o curativo só precisa tapar o centro (menor, não atrapalha os outros)
+	return size * k * 0.68
 
 ## Arrancado com a pinça: tranco rápido na direção do puxão, fica preso na pinça e depois cai
 func _pluck(nd: Node3D) -> void:
@@ -718,7 +719,7 @@ func _bandage_done() -> void:
 func _nail_bandage(manual := false) -> void:
 	var nd: Node3D = nail["node"]
 	var at := nd.to_global(Vector3(0, 0, nail["len"] * 0.5))
-	_bandage(nail["len"] * 0.72, nail["w"] * 0.75, at, nail["dir"], 0.03, manual)
+	_bandage(nail["len"] * 0.62, nail["w"] * 0.66, at, nail["dir"], 0.03, manual)
 
 ## Colar o curativo arrastando: f vai de 0 (começo) a 1 (colado até o fim)
 func stick(f: float) -> void:
