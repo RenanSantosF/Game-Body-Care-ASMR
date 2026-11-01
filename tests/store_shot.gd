@@ -7,7 +7,7 @@ func _ready() -> void:
 	for tl in Defs.TOOL_ORDER:
 		GameData.owned[tl] = 1
 	GameData.sound_on = false
-	GameData.set_language("pt", false)
+	GameData.set_language(OS.get_environment("SHOT_LANG") if OS.get_environment("SHOT_LANG") != "" else "pt", false)
 	runner = load("res://tests/test_runner.gd").new()
 	add_child(runner)
 	await _scene_squeeze()
