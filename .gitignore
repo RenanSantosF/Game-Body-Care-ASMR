@@ -9,3 +9,4 @@ assets/body/*.json
 android/
 plugin_src/.gradle/
 plugin_src/local.properties
+entrega_aab/
