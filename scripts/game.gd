@@ -93,6 +93,11 @@ var bubble: Label
 var lbl_problem: Label
 var lbl_hint: Label
 var modal_open := false
+var restoring := false           # recuperando o progresso salvo (sem efeitos)
+var resumed := false
+
+const CKPT := "user://checkpoint.json"
+const CKPT_IMG := "user://checkpoint_antes.png"
 
 # =================================================================== setup
 
@@ -117,7 +122,8 @@ func _ready() -> void:
 		var sp: Dictionary = spots[i]
 		if sp.is_empty():
 			continue
-		_spawn(data["problems"][i], sp, prng)
+		var sp_p := _spawn(data["problems"][i], sp, prng)
+		sp_p.set_meta("idx", i)
 	# cabelo/sobrancelhas (rosto e cabeça), afastado de cada problema
 	var excl := []
 	for p in problems:
@@ -143,12 +149,77 @@ func _ready() -> void:
 	cam_look = fr[0]
 	cam_dist = fr[1]
 	_apply_cam()
-	before_img = await _capture()
+	var ck := _load_ckpt()
+	if not ck.is_empty() and FileAccess.file_exists(CKPT_IMG):
+		before_img = Image.load_from_file(ProjectSettings.globalize_path(CKPT_IMG))
+	else:
+		before_img = await _capture()
+		if before_img and not GameData.has_meta("lab_problems"):
+			before_img.save_png(CKPT_IMG)
+	if not ck.is_empty():
+		_restore(ck)
 	cam_dist = WIDE_D
 	cam_look = Vector3(body.cam_center.x, 0, body.cam_center.z)
 	_apply_cam()
 	hud.visible = true
 	_check_tools()
+
+## ---- progresso salvo dentro da fase (se o app travar/fechar, continua de onde parou)
+
+func _load_ckpt() -> Dictionary:
+	if GameData.has_meta("lab_problems") or not FileAccess.file_exists(CKPT):
+		return {}
+	var d = JSON.parse_string(FileAccess.get_file_as_string(CKPT))
+	if typeof(d) != TYPE_DICTIONARY or int(d.get("level", -1)) != level:
+		clear_ckpt()
+		return {}
+	return d
+
+func _save_ckpt() -> void:
+	if GameData.has_meta("lab_problems") or restoring or finished:
+		return
+	var st := {}
+	for p in problems:
+		if p.has_meta("idx"):
+			st[str(p.get_meta("idx"))] = -1 if p.done else p.stage
+	var d := {"level": level, "stages": st, "earned": earned, "mistakes": mistakes, "max_pain": max_pain}
+	var f := FileAccess.open(CKPT, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(d))
+
+static func clear_ckpt() -> void:
+	for f in [CKPT, CKPT_IMG]:
+		if FileAccess.file_exists(f):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
+
+## Avança cada problema até a etapa salva, sem sons/efeitos
+func _restore(ck: Dictionary) -> void:
+	var st: Dictionary = ck.get("stages", {})
+	restoring = true
+	for p in problems:
+		if not p.has_meta("idx"):
+			continue
+		var key := str(p.get_meta("idx"))
+		if not st.has(key):
+			continue
+		var target := int(st[key])
+		var base: int = p.def["stages"].size()
+		if target < 0:
+			target = 999
+		var guard := 0
+		while not p.done and p.stage < mini(target, base) and guard < 20:
+			guard += 1
+			p._complete_stage()
+		if target == 999 and not p.done:
+			p.done = true
+			p._on_done()
+	restoring = false
+	earned = int(ck.get("earned", 0))
+	mistakes = int(ck.get("mistakes", 0))
+	max_pain = float(ck.get("max_pain", 0.0))
+	resumed = done_stages > 0
+	_update_progress()
+	GameData.log_line("progresso recuperado: %d etapas" % done_stages)
 
 func _spawn(id: String, sp: Dictionary, prng: RandomNumberGenerator) -> Problem:
 	var p := Problem.new()
@@ -262,6 +333,8 @@ func _exit_tree() -> void:
 func _begin() -> void:
 	GameData.log_line("fase %d (%s): %s" % [level, data["part"], str(data["problems"])])
 	_toast(tr("Fase %d  -  %s") % [level, tr(data["look"]["name"])], Color.WHITE, 46, 1.4)
+	if resumed:
+		_toast("Continuando de onde parou!", UIKit.GREEN, 34, 1.6)
 	_say("Doutor, me ajuda!")
 	if data["extreme"]:
 		await get_tree().create_timer(0.9).timeout
@@ -1388,6 +1461,9 @@ func _wrong(p: Problem, pos: Vector2) -> void:
 # =================================================================== eventos
 
 func _on_stage_done(p: Problem, fin: bool) -> void:
+	if restoring:
+		done_stages += 1
+		return
 	GameData.log_line("%s etapa %d concluida%s" % [p.id, p.stage, " (fim)" if fin else ""])
 	if p == active:
 		active = null
@@ -1411,6 +1487,7 @@ func _on_stage_done(p: Problem, fin: bool) -> void:
 	Sfx.play("coin", 0.05, -8)
 	GameData.vibrate(20, 0.45)
 	_update_progress()
+	_save_ckpt()
 	for q in problems:
 		q.show_guide(q == focus and q.tool() == selected)
 	_update_labels()
@@ -1431,6 +1508,8 @@ func _on_stage_done(p: Problem, fin: bool) -> void:
 				_focus_on(_next_problem(p.center()))
 
 func _on_popped(p: Problem, _c: Color) -> void:
+	if restoring:
+		return
 	shake = 0.025
 	GameData.vibrate(70, 1.0)
 	if randf() < 0.7:
@@ -1482,7 +1561,9 @@ func _fail() -> void:
 		_say("Tá bom... mas com cuidado!")))
 	h.add_child(cont)
 	var retry := UIKit.btn("Recomeçar a fase", UIKit.BLUE, 22, Vector2(340, 70))
-	retry.pressed.connect(func(): get_tree().reload_current_scene())
+	retry.pressed.connect(func():
+		clear_ckpt()
+		get_tree().reload_current_scene())
 	h.add_child(retry)
 	var menu := UIKit.btn("Menu", UIKit.PURPLE, 24, Vector2(340, 76))
 	menu.pressed.connect(_to_menu)
@@ -1490,6 +1571,7 @@ func _fail() -> void:
 
 func _finish() -> void:
 	GameData.log_line("fase %d concluida" % level)
+	clear_ckpt()
 	finished = true
 	input_ok = false
 	pressing = false
@@ -2004,7 +2086,9 @@ func _pause() -> void:
 		upd_mus.call())
 	vb.add_child(mus)
 	var rst := UIKit.btn("Reiniciar", UIKit.BLUE, 30, Vector2(300, 78))
-	rst.pressed.connect(func(): get_tree().reload_current_scene())
+	rst.pressed.connect(func():
+		clear_ckpt()
+		get_tree().reload_current_scene())
 	vb.add_child(rst)
 	var menu := UIKit.btn("Menu", UIKit.PURPLE, 30, Vector2(300, 78))
 	menu.pressed.connect(_to_menu)

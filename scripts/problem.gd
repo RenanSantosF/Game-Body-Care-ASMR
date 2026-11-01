@@ -205,7 +205,11 @@ func rub(wpos: Vector3, px: float, brush_r: float) -> float:
 		# precisa limpar de verdade quase a área toda (cobertura ponderada >= 84%)
 		# c0 = quanto já estava limpo quando a etapa começou (ex.: acne, só suja onde espremeu)
 		var c0: float = target.get_meta("c0", 0.0)
-		progress = clampf((cov - c0) / maxf(0.05, (1.0 - c0) * 0.84), 0.0, 1.0)
+		if c0 > 0.94:
+			# quase nada para limpar (ex.: progresso recuperado): basta esfregar um pouco
+			progress = clampf(progress + px / 300.0, 0.0, 1.0)
+		else:
+			progress = clampf((cov - c0) / maxf(0.05, (1.0 - c0) * 0.84), 0.0, 1.0)
 		if progress >= 0.985:
 			progress = 1.0
 		# sobrou só um restinho que não sai (canto/dobra): esfregando sem ganho, conclui
