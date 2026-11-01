@@ -22,7 +22,7 @@ jobs:
 
       - name: Android SDK (build-tools)
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "build-tools;34.0.0" "platforms;android-34" > /dev/null
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "build-tools;36.0.0" "platforms;android-36" > /dev/null
 
       - name: Cache Godot
         id: cache-godot
@@ -51,6 +51,7 @@ jobs:
           unzip -q -o ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/android_source.zip -d android/build
           touch android/build/.gdignore
           printf "%s.stable" "$GODOT_VERSION" > android/.build_version
+          sh tools/patch_android_sdk.sh
 
       - name: Chave de assinatura
         env:
