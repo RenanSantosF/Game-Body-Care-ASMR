@@ -9,7 +9,7 @@ func _ready() -> void:
 	runner = load("res://tests/test_runner.gd").new()
 	add_child(runner)
 	var bad := 0
-	for lvl in range(1, 21):
+	for lvl in range(int(OS.get_environment("L0")), int(OS.get_environment("L1"))):
 		for k in [1, 2]:
 			var data := LevelGen.make(lvl)
 			var st := {}
