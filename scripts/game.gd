@@ -253,14 +253,14 @@ func _check_tools() -> void:
 
 ## Saindo da fase (próximo paciente/menu): para animações presas a nós que vão sumir
 func _exit_tree() -> void:
-	print("[log] saiu da fase %d" % level)
+	GameData.log_line("saiu da fase %d" % level)
 	for tw in get_tree().get_processed_tweens():
 		if tw.is_valid():
 			tw.kill()
 	set_process(false)
 
 func _begin() -> void:
-	print("[log] fase %d (%s): %s" % [level, data["part"], str(data["problems"])])
+	GameData.log_line("fase %d (%s): %s" % [level, data["part"], str(data["problems"])])
 	_toast(tr("Fase %d  -  %s") % [level, tr(data["look"]["name"])], Color.WHITE, 46, 1.4)
 	_say("Doutor, me ajuda!")
 	if data["extreme"]:
@@ -486,8 +486,26 @@ func _nearest(from: Vector3) -> Problem:
 
 # =================================================================== loop
 
+var _diag_t := 0.0
+var _diag_frames := 0
+
+## Registro periódico do estado (vai para o relatório se o jogo travar/fechar)
+func _diag(delta: float) -> void:
+	_diag_frames += 1
+	_diag_t += delta
+	if delta > 0.4:
+		GameData.log_line("quadro lento: %d ms (ferramenta=%s etapa=%s)" % [int(delta * 1000.0), selected, active.id + str(active.stage) if active else "-"])
+	if _diag_t >= 5.0:
+		GameData.log_line("fps=%d manchas=%d nos=%d mem=%dMB ferramenta=%s ativo=%s dedo=%s botao=%s" % [
+			int(_diag_frames / _diag_t), body.stains.size() if body else 0, get_tree().get_node_count(),
+			int(OS.get_static_memory_usage() / 1048576), selected, active.id + str(active.stage) if active else "-",
+			str(pressing), str(triggering)])
+		_diag_t = 0.0
+		_diag_frames = 0
+
 func _process(delta: float) -> void:
 	now += delta
+	_diag(delta)
 	shake = maxf(0.0, shake - delta * 0.2)
 	_apply_cam()
 	if not input_ok:
@@ -1370,7 +1388,7 @@ func _wrong(p: Problem, pos: Vector2) -> void:
 # =================================================================== eventos
 
 func _on_stage_done(p: Problem, fin: bool) -> void:
-	print("[log] %s etapa %d concluida%s" % [p.id, p.stage, " (fim)" if fin else ""])
+	GameData.log_line("%s etapa %d concluida%s" % [p.id, p.stage, " (fim)" if fin else ""])
 	if p == active:
 		active = null
 	if pressing:
@@ -1471,7 +1489,7 @@ func _fail() -> void:
 	h.add_child(menu)
 
 func _finish() -> void:
-	print("[log] fase %d concluida" % level)
+	GameData.log_line("fase %d concluida" % level)
 	finished = true
 	input_ok = false
 	pressing = false

@@ -17,7 +17,7 @@ var nails: Array = []            # [{node, mat, mesh_inst, w, len, dir, normal, 
 var shadow: MeshInstance3D
 var drops: Array = []            # gotas voando: {mi, pos, vel, kind, size}
 var stains: Array = []           # manchas no corpo (limpáveis): MeshInstance3D
-const MAX_STAINS := 70
+const MAX_STAINS := 40
 var cam_center := Vector3.ZERO
 var wide_height := 4.6
 
@@ -273,6 +273,20 @@ func _step_drops(dt: float) -> void:
 	drops = keep
 
 func add_stain(pos: Vector3, kind: int, r: float, smear := Vector2.ZERO) -> MeshInstance3D:
+	# mancha em cima de outra parecida: só suja de novo a que já existe (não empilha malhas)
+	for st in stains:
+		if not is_instance_valid(st) or st.is_queued_for_deletion():
+			continue
+		var c: Vector3 = st.get_meta("c")
+		var half: float = st.get_meta("half")
+		if half >= r * 0.8 and Vector2(c.x - pos.x, c.z - pos.z).length() < half * 0.5:
+			var mk0: CleanMask = st.get_meta("mask")
+			var rt: float = st.get_meta("rot")
+			var dx := pos.x - c.x
+			var dz := pos.z - c.z
+			mk0.unpaint(Vector2(dx * cos(rt) + dz * sin(rt), -dx * sin(rt) + dz * cos(rt)) / half, r / half, 0.8)
+			mk0.flush()
+			return st
 	if stains.size() >= MAX_STAINS:
 		var old: MeshInstance3D = stains.pop_front()
 		if is_instance_valid(old):

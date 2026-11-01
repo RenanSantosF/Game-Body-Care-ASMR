@@ -28,6 +28,8 @@ func _ready() -> void:
 	if crashed_last:
 		crash_report = _last_log_tail()
 	_mark_running(true)
+	log_line("inicio | %s | Android %s | tela %s" % [OS.get_model_name(), OS.get_version(), str(DisplayServer.window_get_size())])
+	_limit_3d_res()
 	load_game()
 	set_language(language, false)
 	current_level = level
@@ -38,6 +40,20 @@ func _ready() -> void:
 	fv.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 600}
 	th.default_font = fv
 	get_tree().root.theme = th
+
+## Linha de diagnóstico no log. printerr grava no arquivo na hora (print fica em buffer na versão final
+## e se perde se o app travar e for fechado à força).
+func log_line(msg: String) -> void:
+	printerr("[log] " + msg)
+
+## Telas grandes (tablets): limita a resolução do 3D para não sobrecarregar a placa de vídeo
+func _limit_3d_res() -> void:
+	var s := DisplayServer.window_get_size()
+	var px := float(s.x * s.y)
+	const MAX_PX := 2.6e6
+	if px > MAX_PX:
+		get_tree().root.scaling_3d_scale = clampf(sqrt(MAX_PX / px), 0.6, 1.0)
+		log_line("tela %dx%d: 3D em %d%%" % [s.x, s.y, int(get_tree().root.scaling_3d_scale * 100.0)])
 
 ## Marca "rodando"; some quando o app vai para o fundo ou fecha normalmente
 func _mark_running(on: bool) -> void:
