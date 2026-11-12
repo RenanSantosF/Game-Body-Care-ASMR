@@ -7,7 +7,10 @@ on:
   workflow_dispatch:
 
 env:
-  GODOT_VERSION: "4.3"
+  # Godot 4.7.2: bibliotecas Android alinhadas em 16 KB (exigência da Google Play
+  # para Android 15+) e alvo API 36.
+  GODOT_VERSION: "4.7.2"
+  GODOT_SETTINGS: "4.7"
 
 jobs:
   apk:
@@ -20,9 +23,20 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Android SDK (build-tools)
+      - name: Android SDK (build-tools, API 36, NDK)
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "build-tools;36.0.0" "platforms;android-36" > /dev/null
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "build-tools;36.1.0" "platforms;android-36" "ndk;29.0.14206865" > /dev/null
+
+      - name: Compilar o plugin Android (gg_native) contra o Godot ${{ env.GODOT_VERSION }}
+        run: |
+          set -e
+          cd plugin_src
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+          cp build/outputs/aar/gg_native-release.aar ../addons/gg_native/bin/gg_native-release.aar
+          ls -la ../addons/gg_native/bin
 
       - name: Cache Godot
         id: cache-godot
@@ -31,7 +45,7 @@ jobs:
           path: |
             ~/godot
             ~/.local/share/godot/export_templates
-          key: godot-${{ env.GODOT_VERSION }}-android-gradle
+          key: godot-${{ env.GODOT_VERSION }}-android-gradle-v2
 
       - name: Baixar Godot e templates
         if: steps.cache-godot.outputs.cache-hit != 'true'
@@ -45,13 +59,16 @@ jobs:
           unzip -q -j tpl.tpz "templates/android_debug.apk" "templates/android_release.apk" "templates/android_source.zip" "templates/version.txt" -d ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
           rm tpl.tpz
 
-      - name: Modelo de build Android (Gradle) - necessário para o plugin de anúncios
+      - name: Modelo de build Android (Gradle) + ajustes da Play Console
         run: |
+          set -e
+          rm -rf android
           mkdir -p android/build
           unzip -q -o ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/android_source.zip -d android/build
           touch android/build/.gdignore
           printf "%s.stable" "$GODOT_VERSION" > android/.build_version
-          sh tools/patch_android_sdk.sh
+          # APIs de ponta a ponta descontinuadas no Android 15 (aviso da Play Console)
+          bash ci/android_play_compat.sh android/build
 
       - name: Chave de assinatura
         env:
@@ -68,7 +85,7 @@ jobs:
       - name: Configurar editor
         run: |
           mkdir -p ~/.config/godot
-          cat > ~/.config/godot/editor_settings-${GODOT_VERSION}.tres <<EOT
+          cat > ~/.config/godot/editor_settings-${GODOT_SETTINGS}.tres <<EOT
           [gd_resource type="EditorSettings" format=3]
           [resource]
           export/android/android_sdk_path = "$ANDROID_HOME"

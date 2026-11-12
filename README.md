@@ -1,6 +1,6 @@
 # Gross to Glow
 
-Jogo mobile 3D (Godot 4.3) de clínica **nojenta e satisfatória**: pacientes chegam
+Jogo mobile 3D (Godot 4.7.2) de clínica **nojenta e satisfatória**: pacientes chegam
 com a mão ou o pé cheios de problemas, você escolhe a ferramenta certa, trata com
 cuidado e vê o **antes e depois**.
 
@@ -29,7 +29,7 @@ cuidado e vê o **antes e depois**.
 
 ## Como abrir
 
-1. Instale o **Godot 4.3** (PC) ou o **Godot Editor 4.3 para Android**.
+1. Instale o **Godot 4.7.2** (PC) ou o **Godot Editor 4.7.2 para Android**.
 2. Abra a pasta do projeto (`project.godot`) e rode. A cena inicial é `scenes/main_menu.tscn`.
 
 Renderizador: **Compatibility (OpenGL ES 3)**, sem sombras dinâmicas (sombra de contato pré-calculada) — leve no Android.
