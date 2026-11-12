@@ -52,3 +52,6 @@ Disponible en español, inglés y portugués.
 
 === NOVEDADES DE ESTA VERSIÓN (1.0.0) ===
 ¡Primera versión! Trata manos, pies, espalda, cara y cabeza, usa pinza, extractor, bisturí, pomada y vendita, y mira el antes y después de tus pacientes.
+
+=== NOVEDADES DE ESTA VERSIÓN (1.0.3) ===
+Nueva introducción animada FT. Actualizado para las versiones más recientes de Android: más estable y con mejor rendimiento. Ahora funciona en tablets y celulares plegables, en vertical u horizontal, sin recortar la pantalla. Correcciones y mejoras generales.

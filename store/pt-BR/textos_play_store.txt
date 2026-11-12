@@ -65,3 +65,6 @@ espinha, cravo, pus, satisfatório, ASMR, clínica, doutor, cuidados com a pele,
 
 === NOVIDADES DESTA VERSÃO (1.0.0) ===
 Primeira versão! Trate mãos, pés, costas, rosto e cabeça, use pinça, espremedor, bisturi, pomada e curativo, e veja o antes e depois dos seus pacientes.
+
+=== NOVIDADES DESTA VERSÃO (1.0.3) ===
+Nova abertura animada FT. Jogo atualizado para os Androids mais novos: mais estável e com melhor desempenho. Agora funciona em tablets e celulares dobráveis, em pé ou deitado, sem cortar a tela. Correções e melhorias gerais.
