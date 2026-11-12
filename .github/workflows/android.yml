@@ -6,6 +6,9 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   # Godot 4.7.2: bibliotecas Android alinhadas em 16 KB (exigência da Google Play
   # para Android 15+) e alvo API 36.
@@ -128,8 +131,17 @@ jobs:
           name: GrossToGlow-aab
           path: build/GrossToGlow.aab
 
-      - name: Publicar release (tags v*)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publicar release (tags v* ou execução manual)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          files: build/GrossToGlow.apk
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('build-{0}', github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('Gross to Glow - build {0}', github.run_number) }}
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          target_commitish: ${{ github.sha }}
+          body: |
+            GrossToGlow.apk: APK de teste (instala direto no celular).
+            GrossToGlow.aab: pacote assinado para enviar à Google Play Console.
+          files: |
+            build/GrossToGlow.apk
+            build/GrossToGlow.aab
