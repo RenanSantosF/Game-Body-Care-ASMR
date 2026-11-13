@@ -53,5 +53,5 @@ Available in English, Spanish and Portuguese.
 === WHAT'S NEW (1.0.0) ===
 First release! Treat hands, feet, back, face and head, use tweezers, extractor, scalpel, ointment and bandages, and see your patients' before and after.
 
-=== WHAT'S NEW (1.0.3) ===
+=== WHAT'S NEW (1.0.4) ===
 New animated FT intro. Updated for the latest Android versions: more stable and better performance. Now works on tablets and foldables, in portrait or landscape, without cropping the screen. General fixes and improvements.
