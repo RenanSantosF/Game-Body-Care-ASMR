@@ -15,3 +15,5 @@ dest_files=["res://assets/i18n/strings.pt.translation", "res://assets/i18n/strin
 
 compress=true
 delimiter=0
+unescape_keys=false
+unescape_translations=true

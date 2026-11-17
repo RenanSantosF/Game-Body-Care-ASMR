@@ -87,7 +87,9 @@ func play_throttled(snd: String, interval: float, pitch_rand := 0.15, vol := -4.
 
 func _wav(samples: PackedFloat32Array) -> AudioStreamWAV:
 	var data := PackedByteArray()
-	data.resize(samples.size() * 2)
+	# + 256 amostras de silêncio: no Godot 4.7 o mixer lê um pouco além do último
+	# sample; a folga evita leitura fora do buffer (podia fechar o app no Android).
+	data.resize((samples.size() + 256) * 2)
 	for i in samples.size():
 		data.encode_s16(i * 2, int(clampf(samples[i], -1.0, 1.0) * 30000.0))
 	var w := AudioStreamWAV.new()
