@@ -19,6 +19,7 @@ GameData="*res://autoload/game_data.gd"
 Sfx="*res://autoload/sfx.gd"
 Ads="*res://autoload/ad_manager.gd"
 Icons="*res://autoload/icons.gd"
+Telemetry="*res://autoload/telemetry.gd"
 
 [display]
 

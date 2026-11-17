@@ -127,6 +127,7 @@ func speed_mult(id: String) -> float:
 	return 1.0 + 0.35 * (tool_level(id) - 1)
 
 func complete_level(lvl: int, st: int, reward: int) -> void:
+	Telemetry.level(lvl, st > 0, st)
 	var key := str(lvl)
 	stars[key] = maxi(stars.get(key, 0), st)
 	if lvl >= level:
